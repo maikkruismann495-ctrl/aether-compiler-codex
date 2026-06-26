@@ -10,6 +10,7 @@ class TokenType(Enum):
     # Identifiers & Keywords
     IDENT = auto(); NAMESPACE = auto(); FN = auto(); LET = auto(); MUT = auto()
     IF = auto(); ELSE = auto(); FOR = auto(); IN = auto(); RETURN = auto()
+    AND = auto(); OR = auto(); NOT = auto()
     INT_TYPE = auto(); STRING_TYPE = auto(); BOOL_TYPE = auto()
     # Operators
     PLUS = auto(); MINUS = auto(); STAR = auto(); SLASH = auto(); PERCENT = auto()
@@ -33,4 +34,5 @@ KEYWORDS = {
     "if": TokenType.IF, "else": TokenType.ELSE, "for": TokenType.FOR, "in": TokenType.IN, "return": TokenType.RETURN,
     "true": TokenType.TRUE, "false": TokenType.FALSE,
     "int": TokenType.INT_TYPE, "string": TokenType.STRING_TYPE, "bool": TokenType.BOOL_TYPE,
+    "and": TokenType.AND, "or": TokenType.OR, "not": TokenType.NOT,
 }
