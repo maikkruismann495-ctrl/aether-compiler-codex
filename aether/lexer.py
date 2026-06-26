@@ -92,7 +92,7 @@ class Lexer:
                                ("+", TokenType.PLUS), ("-", TokenType.MINUS), ("*", TokenType.STAR), ("/", TokenType.SLASH), ("%", TokenType.PERCENT),
                                ("=", TokenType.ASSIGN), ("<", TokenType.LT), (">", TokenType.GT),
                                ("(", TokenType.LPAREN), (")", TokenType.RPAREN), ("[", TokenType.LBRACKET), ("]", TokenType.RBRACKET),
-                               (":", TokenType.COLON), (".", TokenType.DOT), (",", TokenType.COMMA)]:
+                               (":", TokenType.COLON), (".", TokenType.DOT), (",", TokenType.COMMA), ("@", TokenType.AT)]:
                     if text.startswith(op):
                         self.tokens.append(Token(tt, op, line_num, col))
                         text = text[len(op):]; col += len(op); matched = True; break

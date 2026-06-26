@@ -21,6 +21,7 @@ class TokenType(Enum):
     COLON = auto(); DOT = auto(); COMMA = auto(); ARROW = auto()
     # Delimiters
     LPAREN = auto(); RPAREN = auto(); LBRACKET = auto(); RBRACKET = auto()
+    AT = auto() # Added for decorators
 
 @dataclass
 class Token:

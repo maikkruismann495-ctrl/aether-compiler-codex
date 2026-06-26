@@ -20,7 +20,6 @@ class CodeGenerator(Visitor):
     def generate(self):
         self.ir[f"{self.current_ns}:load"] = ["scoreboard objectives add ae_int dummy"]
         
-        # AUTOMATIC TAG GENERATION
         load_tags = []
         tick_tags = []
         for s in self.ast.statements:
@@ -38,15 +37,16 @@ class CodeGenerator(Visitor):
             if name in s: return s[name]
         return None
         
-    def _alloc_var(self, name, t):
+    def _alloc_var(self, name, t, objective="ae_int"):
         safe = "".join(c if c.isalnum() else "_" for c in name)
         loc = f"var_{safe}_{self.var_c}"
         self.var_c += 1
-        self.scopes[-1][name] = {"type": t, "loc": loc}
+        self.scopes[-1][name] = {"type": t, "loc": loc, "objective": objective}
         return loc
         
-    def _alloc_temp(self, t): 
-        loc = f"temp_{self.temp_c}"; self.temp_c += 1; return loc
+    def _alloc_temp(self, t, objective="ae_int"): 
+        loc = f"temp_{self.temp_c}"; self.temp_c += 1
+        return loc
         
     def _get_path(self, node):
         if isinstance(node, Identifier):
@@ -60,6 +60,13 @@ class CodeGenerator(Visitor):
             return f"{base}.{node.member}"
         raise CodegenError("Invalid target", node.line, node.col)
 
+    def _get_obj(self, node):
+        """Returns the scoreboard objective for a given AST node."""
+        if isinstance(node, Identifier):
+            v = self._lookup(node.name)
+            return v["objective"] if v else "ae_int"
+        return "ae_int"
+
     def visit_Program(self, node):
         for s in node.statements: s.accept(self)
 
@@ -72,14 +79,14 @@ class CodeGenerator(Visitor):
         
         if node.is_method and node.params and node.params[0].name == "self":
             self.class_context = node.name.rsplit("_", 1)[0] if "_" in node.name else None
-            self.scopes[-1]["self"] = {"type": self.class_context, "loc": "self"}
+            self.scopes[-1]["self"] = {"type": self.class_context, "loc": "self", "objective": "ae_int"}
             for i, p in enumerate(node.params[1:]):
                 loc = f"param_{p.name}_{i}"
                 if p.param_type.name in ["int", "bool"]:
                     self.cmds.append(f"scoreboard players operation {loc} ae_int = arg_{i} ae_int")
                 else:
                     self.cmds.append(f"data modify storage {self.current_ns}:data {loc} set from storage {self.current_ns}:data arg{i}")
-                self.scopes[-1][p.name] = {"type": p.param_type.name, "loc": loc}
+                self.scopes[-1][p.name] = {"type": p.param_type.name, "loc": loc, "objective": "ae_int"}
             self.cmds.insert(0, "$")
         else:
             for i, p in enumerate(node.params):
@@ -88,7 +95,7 @@ class CodeGenerator(Visitor):
                     self.cmds.append(f"scoreboard players operation {loc} ae_int = arg_{i} ae_int")
                 else:
                     self.cmds.append(f"data modify storage {self.current_ns}:data {loc} set from storage {self.current_ns}:data arg{i}")
-                self.scopes[-1][p.name] = {"type": p.param_type.name, "loc": loc}
+                self.scopes[-1][p.name] = {"type": p.param_type.name, "loc": loc, "objective": "ae_int"}
 
         node.body.accept(self)
         self.ir[full] = self.cmds
@@ -101,47 +108,54 @@ class CodeGenerator(Visitor):
         self.scopes.pop()
 
     def visit_VariableDecl(self, node):
+        obj_name = node.decorator if node.decorator else "ae_int"
+        
         if isinstance(node.value, Literal):
-            loc = self._alloc_var(node.name, node.var_type.name)
+            loc = self._alloc_var(node.name, node.var_type.name, obj_name)
             if node.var_type.name in ["int", "bool"]:
                 v = node.value.value if node.var_type.name == "int" else (1 if node.value.value else 0)
-                self.cmds.append(f"scoreboard players set {loc} ae_int {v}")
+                self.cmds.append(f"scoreboard players set {loc} {obj_name} {v}")
             else:
                 safe = node.value.value.replace('"', '\\"')
                 self.cmds.append(f'data modify storage {self.current_ns}:data {loc} set value "{safe}"')
             return
         t, l = node.value.accept(self)
-        loc = self._alloc_var(node.name, node.var_type.name)
+        loc = self._alloc_var(node.name, node.var_type.name, obj_name)
         if node.var_type.name in ["int", "bool"]:
-            self.cmds.append(f"scoreboard players operation {loc} ae_int = {l} ae_int")
+            self.cmds.append(f"scoreboard players operation {loc} {obj_name} = {l} ae_int")
         else:
             self.cmds.append(f"data modify storage {self.current_ns}:data {loc} set from storage {self.current_ns}:data {l}")
 
     def visit_Assignment(self, node):
+        path = self._get_path(node.target)
+        obj = self._get_obj(node.target)
+        
         if isinstance(node.value, Literal):
             t = node.target.inferred_type if hasattr(node.target, 'inferred_type') else "int"
             if t in ["int", "bool"]:
                 v = node.value.value if t == "int" else (1 if node.value.value else 0)
-                self.cmds.append(f"scoreboard players set {self._get_path(node.target)} ae_int {v}")
+                self.cmds.append(f"scoreboard players set {path} {obj} {v}")
             else:
                 safe = node.value.value.replace('"', '\\"')
-                self.cmds.append(f'data modify storage {self.current_ns}:data {self._get_path(node.target)} set value "{safe}"')
+                self.cmds.append(f'data modify storage {self.current_ns}:data {path} set value "{safe}"')
             return
         t, l = node.value.accept(self)
+        val_obj = self._get_obj(node.value)
         if t in ["int", "bool"]:
-            self.cmds.append(f"scoreboard players operation {self._get_path(node.target)} ae_int = {l} ae_int")
+            self.cmds.append(f"scoreboard players operation {path} {obj} = {l} {val_obj}")
         else:
-            self.cmds.append(f"data modify storage {self.current_ns}:data {self._get_path(node.target)} set from storage {self.current_ns}:data {l}")
+            self.cmds.append(f"data modify storage {self.current_ns}:data {path} set from storage {self.current_ns}:data {l}")
 
     def visit_IfStmt(self, node):
         t, l = node.condition.accept(self)
+        obj = self._get_obj(node.condition)
         ifn = f"branch_if_{self.temp_c}"; self.temp_c += 1
         fif = f"{self.current_ns}:{ifn}"
         p = self.cmds; self.cmds = []
         node.then_block.accept(self)
         self.ir[fif] = self.cmds
         self.cmds = p
-        self.cmds.append(f"execute if score {l} ae_int matches 1 run function {fif}")
+        self.cmds.append(f"execute if score {l} {obj} matches 1 run function {fif}")
         if node.else_stmt:
             efn = f"branch_else_{self.temp_c}"; self.temp_c += 1
             fel = f"{self.current_ns}:{efn}"
@@ -149,7 +163,7 @@ class CodeGenerator(Visitor):
             node.else_stmt.accept(self)
             self.ir[fel] = self.cmds
             self.cmds = p
-            self.cmds.append(f"execute if score {l} ae_int matches 0 run function {fel}")
+            self.cmds.append(f"execute if score {l} {obj} matches 0 run function {fel}")
 
     def visit_ForStmt(self, node):
         s = node.start; e = node.end
@@ -157,7 +171,7 @@ class CodeGenerator(Visitor):
             for i in range(s.value, e.value):
                 p = self.scopes; self.scopes.append({})
                 loc = f"var_{node.var_name}_{self.var_c}"; self.var_c += 1
-                self.scopes[-1][node.var_name] = {"type": "int", "loc": loc}
+                self.scopes[-1][node.var_name] = {"type": "int", "loc": loc, "objective": "ae_int"}
                 self.cmds.append(f"scoreboard players set {loc} ae_int {i}")
                 node.body.accept(self)
                 self.scopes.pop()
@@ -169,7 +183,8 @@ class CodeGenerator(Visitor):
         self.cmds.append(f"function {fw}")
         p = self.cmds; self.cmds = []
         t, l = node.condition.accept(self)
-        self.cmds.append(f"execute unless score {l} ae_int matches 1 run return 1")
+        obj = self._get_obj(node.condition)
+        self.cmds.append(f"execute unless score {l} {obj} matches 1 run return 1")
         self.cmds.append(f"function {fb}")
         self.cmds.append(f"function {fw}")
         self.ir[fw] = self.cmds
@@ -193,7 +208,8 @@ class CodeGenerator(Visitor):
                 self.cmds.append("return 1")
                 return
             t, l = node.value.accept(self)
-            if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation ret ae_int = {l} ae_int")
+            obj = self._get_obj(node.value)
+            if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation ret ae_int = {l} {obj}")
             else: self.cmds.append(f"data modify storage {self.current_ns}:data ret set from storage {self.current_ns}:data {l}")
         self.cmds.append("return 1")
 
@@ -225,22 +241,24 @@ class CodeGenerator(Visitor):
 
     def visit_BinaryOp(self, node):
         lt, ll = node.left.accept(self); rt, rl = node.right.accept(self)
+        l_obj = self._get_obj(node.left)
+        r_obj = self._get_obj(node.right)
         res = self._alloc_temp(lt)
         if node.op in ['+', '-', '*', '/', '%']:
-            self.cmds.append(f"scoreboard players operation {res} ae_int = {ll} ae_int")
+            self.cmds.append(f"scoreboard players operation {res} ae_int = {ll} {l_obj}")
             ops = {'+': '+=', '-': '-=', '*': '*=', '/': '/=', '%': '%='}
-            self.cmds.append(f"scoreboard players operation {res} ae_int {ops[node.op]} {rl} ae_int")
+            self.cmds.append(f"scoreboard players operation {res} ae_int {ops[node.op]} {rl} {r_obj}")
             return ("int", res)
         elif node.op in ['==', '!=', '<', '>', '<=', '>=']:
             self.cmds.append(f"scoreboard players set {res} ae_int 0")
-            if node.op == '!=': self.cmds.append(f"execute unless score {ll} ae_int = {rl} ae_int run scoreboard players set {res} ae_int 1")
-            else: self.cmds.append(f"execute if score {ll} ae_int {node.op} {rl} ae_int run scoreboard players set {res} ae_int 1")
+            if node.op == '!=': self.cmds.append(f"execute unless score {ll} {l_obj} = {rl} {r_obj} run scoreboard players set {res} ae_int 1")
+            else: self.cmds.append(f"execute if score {ll} {l_obj} {node.op} {rl} {r_obj} run scoreboard players set {res} ae_int 1")
             return ("bool", res)
         elif node.op in ['&&', '||']:
-            self.cmds.append(f"scoreboard players operation {res} ae_int = {ll} ae_int")
-            if node.op == '&&': self.cmds.append(f"scoreboard players operation {res} ae_int *= {rl} ae_int")
+            self.cmds.append(f"scoreboard players operation {res} ae_int = {ll} {l_obj}")
+            if node.op == '&&': self.cmds.append(f"scoreboard players operation {res} ae_int *= {rl} {r_obj}")
             else:
-                self.cmds.append(f"scoreboard players operation {res} ae_int += {rl} ae_int")
+                self.cmds.append(f"scoreboard players operation {res} ae_int += {rl} {r_obj}")
                 self.cmds.append(f"execute if score {res} ae_int matches 2.. run scoreboard players set {res} ae_int 1")
             return ("bool", res)
 
@@ -262,7 +280,6 @@ class CodeGenerator(Visitor):
             if isinstance(n, TupleLiteral): return " ".join(lit_to_str(e) for e in n.elements)
             raise CodegenError(f"Command '{name}' requires literal arguments for MVP.", n.line, n.col)
             
-        # NATIVE COMMAND DSL IMPLEMENTATIONS
         if name == "say":
             if isinstance(node.args[0], Literal):
                 self.cmds.append(f'tellraw @a {{"text":"{node.args[0].value}"}}')
@@ -339,17 +356,12 @@ class CodeGenerator(Visitor):
                 raise CodegenError("run() expects a string literal.", node.line, node.col)
                 
             cmd_str = cmd_str_node.value
-            
-            # DYNAMIC VARIABLE INJECTION IN run()
-            # Find all {var_name} in the string
             matches = re.findall(r'\{([a-zA-Z0-9_]+)\}', cmd_str)
             
             if not matches:
-                # No variables, just output the raw command
                 self.cmds.append(cmd_str)
                 return None
                 
-            # We have variables! Generate a macro.
             macro_id = self.mac_c
             self.mac_c += 1
             macro_name = f"macro_run_{macro_id}"
@@ -361,9 +373,8 @@ class CodeGenerator(Visitor):
                 v = self._lookup(var_name)
                 if not v: raise CodegenError(f"Undeclared variable '{var_name}' in run() string.", node.line, node.col)
                 
-                # Copy variable to macro data storage
                 if v["type"] in ["int", "bool"]:
-                    self.cmds.append(f"execute store storage {self.current_ns}:data macro_{var_name} int 1 run scoreboard players get {v['loc']} ae_int")
+                    self.cmds.append(f"execute store storage {self.current_ns}:data macro_{var_name} int 1 run scoreboard players get {v['loc']} {v['objective']}")
                 else:
                     self.cmds.append(f"data modify storage {self.current_ns}:data macro_{var_name} set from storage {self.current_ns}:data {v['loc']}")
                     
@@ -372,11 +383,9 @@ class CodeGenerator(Visitor):
             args_str = ",".join(macro_data_str)
             self.cmds.append(f"function {full_macro_name} with storage {self.current_ns}:data {{{args_str}}}")
             
-            # Generate the macro function
             old_cmds = self.cmds
             self.cmds = []
             
-            # Replace {var} with $(var) and prefix with $ for 1.21 macro syntax
             macro_cmd = cmd_str
             for var_name in matches:
                 macro_cmd = macro_cmd.replace('{' + var_name + '}', '$(' + var_name + ')')
@@ -387,10 +396,10 @@ class CodeGenerator(Visitor):
             self.cmds = old_cmds
             return None
             
-        # USER FUNCTION CALL
         args = [a.accept(self) for a in node.args]
         for i, (t, l) in enumerate(args):
-            if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} ae_int")
+            obj = self._get_obj(node.args[i])
+            if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} {obj}")
             else: self.cmds.append(f"data modify storage {self.current_ns}:data arg{i} set from storage {self.current_ns}:data {l}")
         
         self.cmds.append(f"function {self.current_ns}:{node.name}")
@@ -403,7 +412,8 @@ class CodeGenerator(Visitor):
         self.cmds.append(f'data modify storage {self.current_ns}:data macro_obj_path set value "{obj_path}"')
         args = [a.accept(self) for a in node.args]
         for i, (t, l) in enumerate(args):
-            if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} ae_int")
+            obj = self._get_obj(node.args[i])
+            if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} {obj}")
             else: self.cmds.append(f"data modify storage {self.current_ns}:data arg{i} set from storage {self.current_ns}:data {l}")
             
         self.cmds.append(f"function {self.current_ns}:{obj_type}_{node.method} with storage {self.current_ns}:data {{macro_obj_path:'{obj_path}'}}")

@@ -80,11 +80,8 @@ class Parser:
         params = []
         if not self._check(TokenType.RPAREN):
             while True:
-                # Allow 'self' keyword to be used as a parameter name
-                if self._check(TokenType.SELF):
-                    p_name = self._advance().value
-                else:
-                    p_name = self._expect(TokenType.IDENT, "Expected param name").value
+                if self._check(TokenType.SELF): p_name = self._advance().value
+                else: p_name = self._expect(TokenType.IDENT, "Expected param name").value
                 self._expect(TokenType.COLON, "Expected ':'")
                 p_type = self._type_node()
                 params.append(Param(tok.line, tok.col, p_name, p_type))
@@ -107,11 +104,24 @@ class Parser:
         return Block(self._peek().line, self._peek().col, stmts)
 
     def _statement(self):
+        decorator = None
+        
+        # Check for @objective("name")
+        if self._match(TokenType.AT):
+            dec_tok = self._previous()
+            dec_name = self._expect(TokenType.IDENT, "Expected decorator name").value
+            if dec_name != "objective":
+                raise ParseError(f"Unknown decorator '@{dec_name}'", dec_tok.line, dec_tok.col)
+            self._expect(TokenType.LPAREN, "Expected '(' after @objective")
+            obj_tok = self._expect(TokenType.STRING, "Expected objective name string")
+            self._expect(TokenType.RPAREN, "Expected ')'")
+            decorator = obj_tok.value
+            
         if self._match(TokenType.IF): return self._if_stmt()
         if self._match(TokenType.FOR): return self._for_stmt()
         if self._match(TokenType.WHILE): return self._while_stmt()
         if self._match(TokenType.RETURN): return self._return_stmt()
-        return self._expr_stmt()
+        return self._expr_stmt(decorator)
 
     def _if_stmt(self):
         tok = self._previous()
@@ -161,7 +171,7 @@ class Parser:
         val = None if self._check(TokenType.NEWLINE) else self._expression()
         return ReturnStmt(tok.line, tok.col, val)
 
-    def _expr_stmt(self):
+    def _expr_stmt(self, decorator=None):
         tok = self._peek()
         expr = self._expression()
         if self._match(TokenType.ASSIGN, TokenType.PLUSEQ, TokenType.MINUSEQ, TokenType.STAREQ, TokenType.SLASHEQ, TokenType.PERCENTEQ):
@@ -246,6 +256,10 @@ class Parser:
                 args, kwargs = self._parse_args()
                 self._expect(TokenType.RPAREN, "Expected ')'")
                 return FunctionCall(ident_tok.line, ident_tok.col, None, ident_tok.value, args, kwargs)
+                
+            # This handles VariableDecl without 'local' keyword, but we need 'local' to trigger it.
+            # Wait, Aether uses 'local' keyword. So we must parse it in _statement.
+            # Actually, let's just make VariableDecl explicit in _statement.
             expr = Identifier(ident_tok.line, ident_tok.col, ident_tok.value)
             return self._postfix(expr)
         raise ParseError(f"Unexpected token {tok.type.name}", tok.line, tok.col)

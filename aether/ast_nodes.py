@@ -54,6 +54,7 @@ class Block(ASTNode):
 @dataclass
 class VariableDecl(ASTNode):
     name: str; var_type: Optional[TypeNode]; value: ASTNode
+    decorator: Optional[str] = None # Added for @objective
 
 @dataclass
 class Assignment(ASTNode):
