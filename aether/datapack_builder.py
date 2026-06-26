@@ -19,7 +19,6 @@ class DatapackBuilder:
         self.ir = ir
         self.out_dir = out_dir
         self.root_ns = root_ns
-        # Path to the user's manual data folder (if they have one)
         self.manual_data_dir = manual_data_dir
 
     def build(self):
@@ -36,6 +35,7 @@ class DatapackBuilder:
         # 2. Write compiled Aether functions and tags
         for f, cmds in self.ir.items():
             if "load.json" in f or "tick.json" in f:
+                # 1.21+ uses singular 'function' for tags
                 tag_dir = os.path.join(data_dir, "minecraft", "tags", "function")
                 os.makedirs(tag_dir, exist_ok=True)
                 filename = f.split("/")[-1]
@@ -44,6 +44,7 @@ class DatapackBuilder:
             else:
                 ns, path = f.split(":", 1)
                 if not self.NS_RE.match(ns): raise ValueError(f"Invalid namespace '{ns}'")
+                # 1.21+ uses singular 'function' for folders
                 ns_dir = os.path.join(data_dir, ns, "function")
                 os.makedirs(ns_dir, exist_ok=True)
                 fp = os.path.join(ns_dir, path.replace("/", "_") + ".mcfunction")
@@ -51,7 +52,6 @@ class DatapackBuilder:
                     for c in cmds: file.write(c.strip() + "\n")
                     
         # 3. MERGE MANUAL DATA (Recipes, Dimensions, Advancements, etc.)
-        # If the user has a 'data' folder in their project, it gets merged perfectly!
         if self.manual_data_dir and os.path.isdir(self.manual_data_dir):
             for item in os.listdir(self.manual_data_dir):
                 src_path = os.path.join(self.manual_data_dir, item)

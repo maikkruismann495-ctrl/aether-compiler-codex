@@ -124,7 +124,6 @@ class CodeGenerator(Visitor):
         self.ir[fif] = self.cmds
         self.cmds = p
         
-        # Bolt-style raw condition (e.g., "score @s obj matches 10")
         if node.raw_condition:
             self.cmds.append(f"execute if {node.raw_condition} run function {fif}")
             if node.else_stmt:
@@ -135,7 +134,6 @@ class CodeGenerator(Visitor):
                 self.ir[fel] = self.cmds
                 self.cmds = p
                 self.cmds.append(f"execute unless {node.raw_condition} run function {fel}")
-        # Aether native bool expression
         else:
             t, l = node.condition.accept(self)
             self.cmds.append(f"execute if score {l} ae_int matches 1 run function {fif}")
@@ -192,10 +190,14 @@ class CodeGenerator(Visitor):
         cmd_str = node.cmd_str
         matches = re.findall(r'\{([a-zA-Z0-9_]+)\}', cmd_str)
         
+        # 1. Plain raw command (no variables)
         if not matches:
-            self.cmds.append(cmd_str)
+            # Strip the leading '/' and trailing whitespace
+            clean_cmd = cmd_str[1:].strip()
+            self.cmds.append(clean_cmd)
             return None
             
+        # 2. Macro raw command (contains {var})
         macro_id = self.mac_c
         self.mac_c += 1
         macro_name = f"macro_cmd_{macro_id}"
@@ -208,7 +210,6 @@ class CodeGenerator(Visitor):
                 self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared variable '{var_name}' in raw command.", node.line, node.col)
                 continue
             
-            # The storage key is "macro_{var_name}"
             storage_key = f"macro_{var_name}"
             
             if v["type"] in ["int", "bool"]:
@@ -223,13 +224,14 @@ class CodeGenerator(Visitor):
         
         old_cmds = self.cmds
         self.cmds = []
-        macro_cmd = cmd_str
         
-        # Replace {var} with $(macro_var) to match the storage key!
+        # Remove the leading '/', then replace {var} with $(macro_var)
+        macro_cmd = cmd_str[1:]
         for var_name in matches:
             macro_cmd = macro_cmd.replace('{' + var_name + '}', '$(macro_' + var_name + ')')
             
-        macro_cmd = '$' + macro_cmd[1:] # Replace leading '/' with '$'
+        # Add the '$' prefix for the 1.21 macro
+        macro_cmd = '$' + macro_cmd.strip()
         
         self.cmds.append(macro_cmd)
         self.ir[full_macro_name] = self.cmds
