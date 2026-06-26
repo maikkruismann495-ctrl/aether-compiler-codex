@@ -1,5 +1,4 @@
-# src/aether/cli.py
-
+# aether/cli.py
 import argparse, os, sys, re, glob, time
 from typing import Dict, List
 from .lexer import Lexer
@@ -25,7 +24,8 @@ def preprocess_imports(file_path: str, seen: set) -> str:
         if os.path.isfile(p):
             return preprocess_imports(p, seen)
         print(f"[Error] Import not found: {p}", file=sys.stderr); sys.exit(1)
-    return re.sub(r'^\s*import\s+"([^"]+\.ae)"\s*', rep, content, flags=re.MULTILINE)
+    # Aether v3.0 uses `use` for imports to match Rust syntax
+    return re.sub(r'^\s*use\s+"([^"]+\.ae)"\s*;', rep, content, flags=re.MULTILINE)
 
 def extract_namespace(src: str) -> str:
     m = re.search(r'^\s*namespace\s+([a-zA-Z0-9_]+)', src, re.MULTILINE)
@@ -64,7 +64,7 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
         ast = sem.analyze()
         if engine.has_errors: engine.print_diagnostics(); return False
         
-        tc = TypeChecker(ast, sem.functions, sem.classes, engine)
+        tc = TypeChecker(ast, sem.functions, engine)
         ast = tc.check()
         if engine.has_errors: engine.print_diagnostics(); return False
         
@@ -96,7 +96,7 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
         return False
 
 def main() -> int:
-    p = argparse.ArgumentParser(prog="aether", description="Aether Compiler v2.0 for MC 1.21.11")
+    p = argparse.ArgumentParser(prog="aether", description="Aether Compiler v3.0 (Rust/Bolt Hybrid) for MC 1.21.11")
     p.add_argument("source", help="Path to main.ae file or project directory")
     p.add_argument("-o", "--output", default=None, help="Output directory for datapack")
     p.add_argument("-w", "--watch", action="store_true", help="Watch for changes and recompile automatically")

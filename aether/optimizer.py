@@ -1,8 +1,6 @@
-# src/aether/optimizer.py
-
+# aether/optimizer.py
 import copy
-import math
-from typing import Optional, Any, List, Union
+from typing import Optional, Any, List
 from .ast_nodes import *
 from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 
@@ -42,7 +40,6 @@ class Optimizer(Visitor):
         return Program(node.line, node.col, new_stmts)
 
     def visit_NamespaceDecl(self, node: NamespaceDecl) -> NamespaceDecl: return node
-    def visit_ClassDecl(self, node: ClassDecl) -> ClassDecl: return node
 
     def visit_FunctionDecl(self, node: FunctionDecl) -> FunctionDecl:
         p = self.current_scope; self.current_scope = OptScope(p)
@@ -78,11 +75,8 @@ class Optimizer(Visitor):
         node.condition = node.condition.accept(self)
         if isinstance(node.condition, Literal) and node.condition.lit_type == "bool":
             if node.condition.value is True: return node.then_block.accept(self)
-            elif node.condition.value is False:
-                for eif in node.elifs: eif.accept(self)
-                return node.else_stmt.accept(self) if node.else_stmt else None
+            elif node.condition.value is False: return node.else_stmt.accept(self) if node.else_stmt else None
         node.then_block = node.then_block.accept(self)
-        for eif in node.elifs: eif.accept(self)
         if node.else_stmt: node.else_stmt = node.else_stmt.accept(self)
         return node
 
@@ -100,18 +94,11 @@ class Optimizer(Visitor):
             self.current_scope = p
         return self._make_block(unrolled, node.line, node.col)
 
-    def visit_WhileStmt(self, node: WhileStmt) -> WhileStmt:
-        node.condition = node.condition.accept(self)
-        node.body = node.body.accept(self)
-        return node
-
-    def visit_ExecuteStmt(self, node: ExecuteStmt) -> ExecuteStmt:
-        node.chain = [(s, sel.accept(self)) for s, sel in node.chain]
-        node.body = node.body.accept(self)
-        return node
-
     def visit_ReturnStmt(self, node: ReturnStmt) -> ReturnStmt:
         if node.value: node.value = node.value.accept(self)
+        return node
+
+    def visit_RawCommandStmt(self, node: RawCommandStmt) -> RawCommandStmt:
         return node
 
     def visit_ExprStmt(self, node: ExprStmt) -> ExprStmt:
@@ -119,35 +106,14 @@ class Optimizer(Visitor):
 
     def visit_Literal(self, node: Literal) -> Literal: return node
     
-    def visit_TupleLiteral(self, node: TupleLiteral) -> TupleLiteral:
+    def visit_ArrayLiteral(self, node: ArrayLiteral) -> ArrayLiteral:
         node.elements = [e.accept(self) for e in node.elements]
-        return node
-
-    def visit_DictLiteral(self, node: DictLiteral) -> DictLiteral:
-        for k in node.elements: node.elements[k] = node.elements[k].accept(self)
-        return node
-
-    def visit_FormatString(self, node: FormatString) -> ASTNode:
-        new_parts = []
-        for p in node.parts:
-            if isinstance(p, str): new_parts.append(p)
-            else:
-                opt = p.accept(self)
-                if isinstance(opt, Literal): new_parts.append(str(opt.value))
-                else: new_parts.append(opt)
-        if all(isinstance(p, str) for p in new_parts):
-            merged = "".join(new_parts)
-            return Literal(node.line, node.col, merged, "string")
-        node.parts = new_parts
         return node
 
     def visit_Identifier(self, node: Identifier) -> ASTNode:
         c = self.current_scope.lookup_const(node.name)
         return copy.deepcopy(c) if c else node
 
-    def visit_MemberAccess(self, node: MemberAccess) -> ASTNode:
-        node.obj = node.obj.accept(self); return node
-        
     def visit_IndexAccess(self, node: IndexAccess) -> ASTNode:
         node.array = node.array.accept(self); node.index = node.index.accept(self); return node
 
@@ -166,11 +132,7 @@ class Optimizer(Visitor):
 
     def visit_FunctionCall(self, node: FunctionCall) -> ASTNode:
         node.args = [a.accept(self) for a in node.args]
-        for k in node.kwargs: node.kwargs[k] = node.kwargs[k].accept(self)
         return node
-
-    def visit_MethodCall(self, node: MethodCall) -> MethodCall:
-        node.obj = node.obj.accept(self); node.args = [a.accept(self) for a in node.args]; return node
 
     def _fold_binary(self, op: str, l: Literal, r: Literal, line: int, col: int) -> Literal:
         lv, rv, lt = l.value, r.value, l.lit_type

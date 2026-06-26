@@ -1,5 +1,4 @@
-# src/aether/ast_nodes.py
-
+# aether/ast_nodes.py
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Union, Any, Dict
@@ -26,18 +25,11 @@ class NamespaceDecl(ASTNode):
     name: str
 
 @dataclass
-class ClassDecl(ASTNode):
-    name: str
-    fields: Dict[str, str]
-    methods: List['FunctionDecl']
-
-@dataclass
 class FunctionDecl(ASTNode):
     name: str
     params: List['Param']
     return_type: Optional['TypeNode']
     body: 'Block'
-    is_method: bool = False
 
 @dataclass
 class Param(ASTNode):
@@ -53,8 +45,7 @@ class Block(ASTNode):
 
 @dataclass
 class VariableDecl(ASTNode):
-    name: str; var_type: Optional[TypeNode]; value: ASTNode
-    decorator: Optional[str] = None
+    name: str; var_type: Optional[TypeNode]; value: ASTNode; is_mut: bool
 
 @dataclass
 class Assignment(ASTNode):
@@ -66,24 +57,19 @@ class CompoundAssign(ASTNode):
 
 @dataclass
 class IfStmt(ASTNode):
-    condition: ASTNode; then_block: Block; elifs: List['IfStmt']; else_stmt: Optional[Block]
+    condition: ASTNode; then_block: Block; else_stmt: Optional[Block]
 
 @dataclass
 class ForStmt(ASTNode):
     var_name: str; start: ASTNode; end: ASTNode; body: Block
 
 @dataclass
-class WhileStmt(ASTNode):
-    condition: ASTNode; body: Block
-
-@dataclass
-class ExecuteStmt(ASTNode):
-    chain: List[tuple]  # List of (sub_command, selector_node)
-    body: Block
-
-@dataclass
 class ReturnStmt(ASTNode):
     value: Optional[ASTNode]
+
+@dataclass
+class RawCommandStmt(ASTNode):
+    cmd_str: str
 
 @dataclass
 class ExprStmt(ASTNode):
@@ -94,24 +80,12 @@ class Literal(ASTNode):
     value: Union[int, str, bool]; lit_type: str
 
 @dataclass
-class TupleLiteral(ASTNode):
+class ArrayLiteral(ASTNode):
     elements: List[ASTNode]
-
-@dataclass
-class DictLiteral(ASTNode):
-    elements: Dict[str, ASTNode]
-
-@dataclass
-class FormatString(ASTNode):
-    parts: List[Union[str, ASTNode]]
 
 @dataclass
 class Identifier(ASTNode):
     name: str
-
-@dataclass
-class MemberAccess(ASTNode):
-    obj: ASTNode; member: str
 
 @dataclass
 class IndexAccess(ASTNode):
@@ -127,8 +101,4 @@ class UnaryOp(ASTNode):
 
 @dataclass
 class FunctionCall(ASTNode):
-    namespace: Optional[str]; name: str; args: List[ASTNode]; kwargs: Dict[str, ASTNode] = field(default_factory=dict)
-
-@dataclass
-class MethodCall(ASTNode):
-    obj: ASTNode; method: str; args: List[ASTNode]
+    name: str; args: List[ASTNode]
