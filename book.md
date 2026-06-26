@@ -1,4 +1,4 @@
-# 📖 The Aether Programming Language: Official Handbook & Compiler Reference (v2.0)
+# 📖 The Aether Programming Language: Official Handbook (v2.2)
 
 Welcome to the official handbook for Aether. This document is the complete, authoritative guide to the Aether programming language and its compiler. Whether you are building a simple Hello World script or a massive multiplayer RPG, this book will teach you how to master Aether.
 
@@ -82,25 +82,20 @@ def main():
 ```
 *Note: Aether forces you to use `bool` types in `if` statements. You can't say `if hp:` because `hp` is an `int`, not a `bool`. You must explicitly compare it, like `if hp > 0:`.*
 
-## Lesson 5: Loops (Repetition)
-Loops let you run code multiple times. Aether has two types.
+## Lesson 5: Loops & Coroutines
+Loops let you run code multiple times. Aether has `for` (compile-time) and `while` (runtime) loops. 
+Aether also features `wait()`, a coroutine that pauses your function for a set number of ticks!
 
-### The Compile-Time Loop (`for`)
-The `for` loop is unrolled at compile time. It generates flat commands. Zero lag.
 ```python
 def main():
+    # Compile-time loop (unrolled into flat commands)
     for i in range(5):
         give("@a", "minecraft:arrow", 1)
-```
-This generates 5 raw `/give` commands. The variable `i` goes from `0` to `4`.
-
-### The Runtime Loop (`while`)
-`while` loops run dynamically in the game. Use them for waiting or ticking logic.
-```python
-def main():
-    local timer = 0
-    while timer < 100:
-        timer += 1
+        
+    # Coroutine
+    say("Waiting 1 second...")
+    wait(20) # 20 ticks = 1 second
+    say("Done!")
 ```
 *Warning: If a `while` loop never ends, Minecraft will crash (hit the 65536 command limit). Always ensure it breaks!*
 
@@ -141,20 +136,23 @@ def main():
 ```
 Under the hood, Aether saves `p1` as an NBT compound in Minecraft storage and dynamically routes the `take_damage` function to modify `p1`'s specific `hp` value.
 
-## Lesson 8: Native Minecraft Commands
-Aether gives you clean syntax for Minecraft commands using "Keyword Arguments".
+## Lesson 8: Native Minecraft Commands (The Bolt Magic)
+Aether gives you clean syntax for Minecraft commands using "Keyword Arguments". It also lets you use native `execute` blocks and `Entity` wrapper objects!
 
 ```python
 def main():
-    particle("minecraft:flame", at=(0, 10, 0), count=10, speed=0.1, mode="force")
-    summon("minecraft:zombie", at=(~, ~, ~))
-```
-And if Aether doesn't have a built-in wrapper for a command, you can use `run()` to write raw commands, injecting variables with `{}`!
-
-```python
-def main():
-    local target = "@p"
-    run("effect give {target} minecraft:speed 30 1")
+    # Dict Literals (NBT)
+    local gear = {"id": "minecraft:diamond_sword", "Count": 1}
+    
+    # Execute Blocks
+    execute as "@e[type=zombie]" at "@s":
+        run("data merge entity @s {HurtTime:10}")
+        particle("minecraft:cloud", at=(~, ~1, ~), count=2)
+        
+    # Entity Objects
+    local target = entity("@p")
+    target.say("I am the target!")
+    target.tp(0, 100, 0)
 ```
 
 *Congratulations, you now know the basics of Aether! The rest of this book is the deep-dive reference manual. Keep it open while you build.*
@@ -249,7 +247,7 @@ Aether behaves like a real compiler (Direct Compiler model). The Intermediate Re
 Aether uses indentation (spaces) to define blocks. Semicolons are optional.
 
 ### Keywords
-`namespace`, `class`, `def`, `if`, `elif`, `else`, `for`, `while`, `return`, `local`, `import`, `in`, `range`, `self`, `and`, `or`, `not`, `true`, `false`, `int`, `string`, `bool`.
+`namespace`, `class`, `def`, `if`, `elif`, `else`, `for`, `while`, `return`, `local`, `import`, `in`, `range`, `self`, `and`, `or`, `not`, `true`, `false`, `int`, `string`, `bool`, `execute`.
 
 ### Formatting
 ```python
@@ -280,6 +278,11 @@ Aether is statically typed. Type inference is supported.
 ### 3. `bool`
 * **Purpose:** `true` or `false`.
 * **Memory Model:** Stored in `ae_int` scoreboard as `1` or `0`.
+
+### 4. `nbt` (Dict Literal)
+* **Purpose:** NBT compound data.
+* **Memory Model:** Stored in `storage <namespace>:data` as NBT compounds.
+* **Limitations:** Keys must be string literals. Values can be strings, ints, bools, or nested dicts.
 
 ---
 
@@ -362,6 +365,20 @@ Conditions **must** evaluate to `bool`. There is no implicit truthiness.
 ### Runtime Loops (`while`)
 **Compiler Translation:** Generates a recursive function. `loop_0.mcfunction` checks the condition, calls `loop_body_0.mcfunction`, then calls itself.
 
+### The `wait()` Coroutine (New!)
+Pauses the execution of the current function for a specified number of ticks.
+```python
+def main():
+    say("Explosion in 3...")
+    wait(20) # Pauses execution for 20 ticks (1 second)
+    say("2...")
+    wait(20)
+    say("1...")
+    wait(20)
+    summon("minecraft:tnt", at=(0, 5, 0))
+```
+**Compiler Translation:** Aether splits the function into multiple `.mcfunction` files and uses `/schedule` to chain them.
+
 ---
 
 # Part 8 — Functions
@@ -415,6 +432,18 @@ local first = scores[0]
 ```
 **Limitation:** Dynamic indexing (`scores[i]` where `i` is a variable) is not supported in the current MVP. Indices must be compile-time constants.
 
+### Dict Literals (NBT Compounds) (New!)
+Dict literals map directly to Minecraft NBT compounds. This is perfect for summoning entities with custom data.
+```python
+def main():
+    local gear = {
+        "id": "minecraft:diamond_sword",
+        "Count": 1,
+        "tag": {"Enchantments": [{"id": "minecraft:sharpness", "lvl": 5}]}
+    }
+    summon("minecraft:zombie", at=(0, 0, 0), nbt=gear)
+```
+
 ---
 
 # Part 12 — Modules
@@ -435,19 +464,13 @@ import "lib/utils.ae"
 * `math::sqrt(val)` -> Returns `int`.
 
 ### Time
-* `time.sleep(ticks)` -> Schedules the rest of the function for later using `/schedule`.
+* `wait(ticks)` -> Schedules the rest of the function for later using `/schedule`. (Replaces `time.sleep`)
 
 ---
 
 # Part 14 — Minecraft API
 
-### Native Command DSL
-Aether uses keyword arguments for clean commands.
-```python
-particle("minecraft:flame", at=(0, 10, 0), count=10, speed=0.1, mode="force")
-summon("minecraft:zombie", at=(~, ~, ~))
-give("@a", "minecraft:apple", count=5)
-```
+Aether provides structured, typed wrappers for almost every Minecraft command. You no longer need to remember exact string formatting or quote escaping.
 
 ### Dynamic `say()` (Wiki-Compliant `tellraw` JSON)
 When you use `say()` with a string containing `{var}`, Aether does **not** just use macros. It dynamically builds a valid, wiki-compliant `tellraw` JSON array. It reads directly from scoreboards and NBT storage at runtime!
@@ -464,7 +487,6 @@ say("You have lost {gold} gold to {deaths} deaths.")
 ```mcfunction
 tellraw @a [{"text":"You have lost "},{"score":{"name":"var_gold_0","objective":"ae_int"}},{"text":" gold to "},{"score":{"name":"var_deaths_0","objective":"deathCount"}},{"text":" deaths."}]
 ```
-This is massively performant and completely avoids macro overhead for text display.
 
 ### Dynamic `run()` (Macros)
 For raw commands that aren't `say`, you can use `run()` and inject variables using `{var}`.
@@ -473,6 +495,62 @@ local target = "@p"
 run("kill {target}")
 ```
 **Compiler Translation:** Generates a 1.21 macro function: `$kill $(target)`.
+
+### Native `execute` Blocks (New!)
+Instead of writing raw `run("execute as @e...")` strings, you can use Aether's clean block syntax to scope commands to entities.
+```python
+def cast_aoe():
+    execute as "@e[type=zombie, distance=..5]":
+        run("data merge entity @s {HurtTime:10}")
+        particle("minecraft:cloud", at=(~, ~1, ~), count=5)
+```
+**Compiler Translation:**
+```mcfunction
+execute as @e[type=zombie, distance=..5] run data merge entity @s {HurtTime:10}
+execute as @e[type=zombie, distance=..5] run particle minecraft:cloud ~ ~1 ~ 0 0 0 0 5 normal
+```
+
+### `Entity` Wrapper Objects (New!)
+In Aether, selectors can be manipulated as native objects using the `entity()` constructor.
+```python
+def main():
+    local target = entity("@p")
+    
+    # Call methods directly on the entity!
+    target.say("I am the target!")
+    target.tp(0, 100, 0)
+    
+    # Modify NBT data directly using Dict literals
+    target.set_nbt({"CustomName":'"Bessie"'})
+```
+
+### Production-Ready Command DSL (New!)
+Aether provides structured, typed wrappers for almost every Minecraft command. You no longer need to remember exact string formatting or quote escaping.
+
+```python
+def main():
+    # Effects & Damage
+    effect("give", "@p", "minecraft:speed", duration=30, amplifier=2, particles=false)
+    damage("@e[type=zombie]", 50, type="minecraft:fire", by="@p")
+    
+    # World & Environment
+    setblock(at=(0, 0, 0), "minecraft:diamond_block", mode="replace")
+    fill(from=(0,0,0), to=(5,5,5), "minecraft:stone", mode="hollow")
+    time("set", "day")
+    weather("rain", duration=600)
+    
+    # Entities & Stats
+    attribute("@p", "minecraft:generic.max_health", "base", "set", 20)
+    tag("@e[type=cow]", "add", "my_cow")
+    xp("@p", 10, type="levels")
+    
+    # Server & Admin
+    bossbar("add", "my_boss", "Boss Health")
+    gamerule("doDaylightCycle", "false")
+    recipe("give", "@a", "minecraft:diamond_sword")
+```
+
+If a command doesn't have an explicit wrapper, the **Universal Fallback** automatically formats the function call into a raw vanilla command, meaning *every* command in the game is supported.
 
 ### Lifecycle Hooks
 * `def main():` -> Hooked into `#minecraft:load`
@@ -565,13 +643,49 @@ def remove_trail():
     run("kill @s")
 ```
 
+### Dynamic Entity Manipulation (New!)
+```python
+# main.ae
+namespace my_game
+
+def main():
+    say("Starting script...")
+    
+    # Dict Literals (NBT Compounds)
+    local zombie_gear = {
+        "id": "minecraft:diamond_sword",
+        "Count": 1,
+        "tag": {"Enchantments": [{"id": "minecraft:sharpness", "lvl": 5}]}
+    }
+    
+    # Native execute blocks
+    execute as "@e[type=zombie]" at "@s":
+        run("data merge entity @s {HurtTime:10}")
+        particle("minecraft:cloud", at=(~, ~1, ~), count=2)
+        
+    # Entity wrapper objects
+    local target = entity("@p")
+    target.say("I am the target!")
+    target.tp(0, 100, 0)
+    
+    # wait() coroutine
+    say("Falling in 3...")
+    wait(20)
+    say("2...")
+    wait(20)
+    say("1...")
+    wait(20)
+    summon("minecraft:tnt", at=(0, 0, 0), nbt={"Fuse": 20})
+    say("Boom!")
+```
+
 ---
 
 # Part 22 — Language Reference
 
-* **Keywords:** `namespace`, `class`, `def`, `if`, `elif`, `else`, `for`, `while`, `return`, `local`, `import`, `in`, `range`, `self`, `and`, `or`, `not`, `true`, `false`, `int`, `string`, `bool`.
+* **Keywords:** `namespace`, `class`, `def`, `if`, `elif`, `else`, `for`, `while`, `return`, `local`, `import`, `in`, `range`, `self`, `and`, `or`, `not`, `true`, `false`, `int`, `string`, `bool`, `execute`.
 * **Decorators:** `@objective("name")`.
-* **Builtins:** `say`, `give`, `summon`, `tp`, `setblock`, `fill`, `effect`, `particle`, `playsound`, `clear`, `title`, `kill`, `run`.
+* **Builtins:** `say`, `give`, `summon`, `tp`, `setblock`, `fill`, `effect`, `particle`, `playsound`, `clear`, `title`, `kill`, `run`, `wait`, `entity`.
 * **Math:** `math::sin`, `math::cos`, `math::sqrt`.
 
 ---

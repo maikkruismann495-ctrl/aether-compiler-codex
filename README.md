@@ -4,17 +4,24 @@
   <strong>A modern, strictly-typed, Python-inspired programming language that compiles to Minecraft Java Edition 1.21+ Datapacks.</strong>
 </p>
 
-Aether bridges the gap between modern software development and Minecraft map creation. Stop writing hundreds of repetitive `.mcfunction` files. With Aether, you write clean, object-oriented code with type hints, compile-time math, and native command DSLs, and the compiler translates it into perfectly optimized, vanilla-safe Minecraft datapacks.
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
+  <a href="https://github.com/torbenn211/aether-compiler/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-green.svg" alt="License: GPL-3.0"></a>
+  <a href="https://minecraft.wiki/w/Data_pack"><img src="https://img.shields.io/badge/Minecraft-1.21%2B-purple.svg" alt="Minecraft 1.21+"></a>
+</p>
+
+Aether bridges the gap between modern software development and Minecraft map creation. Stop writing hundreds of repetitive `.mcfunction` files. With Aether, you write clean, object-oriented code with type hints, compile-time math, and a massive native command DSL, and the compiler translates it into perfectly optimized, vanilla-safe Minecraft datapacks.
 
 ## ✨ Features
 
 * **Python-like Syntax:** Indentation-based blocks, `def` functions, `class` OOP, and optional type hints.
-* **Professional Diagnostics:** Rust/Clang-style error reporting with source snippets, underlines, and helpful hints. Features error recovery to report multiple errors at once.
-* **Zero-Boilerplate Datapacks:** Automatically generates `pack.mcmeta`, `load.json`, and `tick.json`. Just write logic.
+* **Production-Ready Command DSL:** Clean, typed function wrappers for almost **every command in the game** (`bossbar`, `attribute`, `damage`, `recipe`, `data`, etc.). No more raw string formatting!
+* **Bolt-Style `execute` Blocks:** Scope commands to entities natively without raw `run()` strings.
+* **`Entity` Wrappers:** Treat selectors as native objects. Call methods like `target.tp(0, 100, 0)` directly!
+* **Dict Literals (NBT):** Use `{}` syntax to create NBT compounds. The compiler handles serialization automatically.
+* **`wait()` Coroutines:** Pause function execution for a set number of ticks. The compiler automatically splits functions and handles `/schedule`.
 * **Zero-Cost Abstractions:** `for` loops and `math::` functions are evaluated *at compile time*, outputting raw commands with zero runtime lag.
-* **Native Command DSL:** Write readable Minecraft commands using keyword arguments. `particle("flame", at=(0, 10, 0), count=5)`
-* **Dynamic Macros:** Inject variables directly into raw commands: `run("say {message}")` automatically generates 1.21 macro functions.
-* **OOP Support:** Create `class` structs with `__init__`, `self`, and methods. Objects map dynamically to NBT storage.
+* **Professional Diagnostics:** Rust/Clang-style error reporting with source snippets, underlines, and helpful hints. Features error recovery to report multiple errors at once.
 * **Vanilla Interoperability:** Use the `@objective("deathCount")` decorator to seamlessly read/write vanilla scoreboard objectives.
 
 ---
@@ -76,6 +83,32 @@ def main():
     
     # Native Command DSL
     particle("minecraft:flame", at=(0, 10, 0), count=10, speed=0.1, mode="force")
+    
+    # Dict Literals (NBT Compounds)
+    local zombie_gear = {
+        "id": "minecraft:diamond_sword",
+        "Count": 1
+    }
+    
+    # Native execute blocks
+    execute as "@e[type=zombie]" at "@s":
+        run("data merge entity @s {HurtTime:10}")
+        particle("minecraft:cloud", at=(~, ~1, ~), count=2)
+        
+    # Entity wrapper objects
+    local target = entity("@p")
+    target.say("I am the target!")
+    target.tp(0, 100, 0)
+    
+    # wait() coroutine
+    say("Falling in 3...")
+    wait(20)
+    say("2...")
+    wait(20)
+    say("1...")
+    wait(20)
+    summon("minecraft:tnt", at=(0, 0, 0), nbt={"Fuse": 20})
+    say("Boom!")
 ```
 
 3. Compile it into a datapack:
@@ -107,6 +140,37 @@ aether <source> [options]
 ```bash
 aether ./my_project/ -w -o ./my_world/datapacks/my_game
 ```
+
+---
+
+## 🎮 Native Command DSL
+
+Aether provides structured, typed wrappers for almost every Minecraft command. You no longer need to remember exact string formatting or quote escaping.
+
+```python
+def main():
+    # Effects & Damage
+    effect("give", "@p", "minecraft:speed", duration=30, amplifier=2, particles=false)
+    damage("@e[type=zombie]", 50, type="minecraft:fire", by="@p")
+    
+    # World & Environment
+    setblock(at=(0, 0, 0), "minecraft:diamond_block", mode="replace")
+    fill(from=(0,0,0), to=(5,5,5), "minecraft:stone", mode="hollow")
+    time("set", "day")
+    weather("rain", duration=600)
+    
+    # Entities & Stats
+    attribute("@p", "minecraft:generic.max_health", "base", "set", 20)
+    tag("@e[type=cow]", "add", "my_cow")
+    xp("@p", 10, type="levels")
+    
+    # Server & Admin
+    bossbar("add", "my_boss", "Boss Health")
+    gamerule("doDaylightCycle", "false")
+    recipe("give", "@a", "minecraft:diamond_sword")
+```
+
+If a command doesn't have an explicit wrapper, the **Universal Fallback** automatically formats the function call into a raw vanilla command, meaning *every* command in the game is supported.
 
 ---
 
@@ -159,7 +223,7 @@ Aether v2.0 behaves like a real, professionally engineered compiler (Direct Comp
 ```
 
 ### Error Recovery & Diagnostics
-Instead of crashing on the first syntax error, Aether v2.0 logs diagnostics and attempts to recover. This allows the compiler to report multiple errors at once, saving you time.
+Instead of crashing on the first syntax error, Aether logs diagnostics and attempts to recover. This allows the compiler to report multiple errors at once, saving you time.
 
 ```text
 error[E202]: Expected ':' (Got NEWLINE)

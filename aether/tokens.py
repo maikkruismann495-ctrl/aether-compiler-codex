@@ -16,7 +16,7 @@ class TokenType(Enum):
     INT_TYPE = auto(); STRING_TYPE = auto(); BOOL_TYPE = auto()
     # Operators
     PLUS = auto(); MINUS = auto(); STAR = auto(); SLASH = auto(); PERCENT = auto()
-    ASSIGN = auto(); EQ = auto(); NEQ = auto(); LT = auto(); GT = auto(); LTE = auto(); GTE = auto
+    ASSIGN = auto(); EQ = auto(); NEQ = auto(); LT = auto(); GT = auto(); LTE = auto(); GTE = auto()
     PLUSEQ = auto(); MINUSEQ = auto(); STAREQ = auto(); SLASHEQ = auto(); PERCENTEQ = auto()
     COLON = auto(); DOT = auto(); COMMA = auto(); ARROW = auto()
     # Delimiters

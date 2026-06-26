@@ -33,7 +33,6 @@ class CodeGenerator(Visitor):
         return self.ir
 
     def _finalize_function(self, full_name: str, cmds: List[str]) -> List[str]:
-        """Post-processes a function to handle wait() coroutines."""
         if not any("__WAIT__(" in c for c in cmds):
             return cmds
             
@@ -418,33 +417,33 @@ class CodeGenerator(Visitor):
                 if t == "string": self.cmds.append(f'tellraw @a {{"storage":"{self.current_ns}:data","nbt":"{l}","interpret":true}}')
                 else: self.cmds.append(f'tellraw @a {{"score":{{"name":"{l}","objective":"ae_int"}}}}')
                 return None
-                
+
+        # --- PRODUCTION-READY NATIVE COMMAND DSL ---
+        
         if name == "give":
             target = lit_to_str(node.args[0])
             item = lit_to_str(node.args[1])
             count = lit_to_str(get_kwarg("count", 1))
             self.cmds.append(f"give {target} {item} {count}")
             return None
-            
+
         if name == "summon":
             entity = lit_to_str(node.args[0])
             at = lit_to_str(get_kwarg("at", (0,0,0)))
             nbt_node = get_kwarg("nbt", "")
-            if isinstance(nbt_node, DictLiteral):
-                nbt = self._dict_to_nbt(nbt_node.elements)
-            else:
-                nbt = lit_to_str(nbt_node)
+            if isinstance(nbt_node, DictLiteral): nbt = self._dict_to_nbt(nbt_node.elements)
+            else: nbt = lit_to_str(nbt_node)
             cmd = f"summon {entity} {at}"
             if nbt: cmd += f" {nbt}"
             self.cmds.append(cmd)
             return None
-            
-        if name == "tp":
+
+        if name == "tp" or name == "teleport":
             target = lit_to_str(node.args[0])
             at = lit_to_str(get_kwarg("at", (0,0,0)))
             self.cmds.append(f"tp {target} {at}")
             return None
-            
+
         if name == "particle":
             p_type = lit_to_str(node.args[0])
             at = lit_to_str(get_kwarg("at", (0,0,0)))
@@ -454,14 +453,14 @@ class CodeGenerator(Visitor):
             mode = lit_to_str(get_kwarg("mode", "normal"))
             self.cmds.append(f"particle {p_type} {at} {delta} {speed} {count} {mode}")
             return None
-            
+
         if name == "setblock":
             at = lit_to_str(get_kwarg("at", (0,0,0)))
             block = lit_to_str(node.args[0])
             mode = lit_to_str(get_kwarg("mode", "replace"))
             self.cmds.append(f"setblock {at} {block} {mode}")
             return None
-            
+
         if name == "fill":
             from_ = lit_to_str(get_kwarg("from", (0,0,0)))
             to = lit_to_str(get_kwarg("to", (0,0,0)))
@@ -469,21 +468,310 @@ class CodeGenerator(Visitor):
             mode = lit_to_str(get_kwarg("mode", "replace"))
             self.cmds.append(f"fill {from_} {to} {block} {mode}")
             return None
-            
+
         if name == "effect":
-            target = lit_to_str(node.args[0])
-            eff_type = lit_to_str(node.args[1])
-            duration = lit_to_str(get_kwarg("duration", 30))
-            amplifier = lit_to_str(get_kwarg("amplifier", 0))
-            particles = lit_to_str(get_kwarg("particles", True))
-            self.cmds.append(f"effect give {target} {eff_type} {duration} {amplifier} {particles}")
+            action = lit_to_str(node.args[0])
+            if action == "give":
+                target = lit_to_str(node.args[1])
+                eff_type = lit_to_str(node.args[2])
+                duration = lit_to_str(get_kwarg("duration", 30))
+                amplifier = lit_to_str(get_kwarg("amplifier", 0))
+                particles = lit_to_str(get_kwarg("particles", True))
+                self.cmds.append(f"effect give {target} {eff_type} {duration} {amplifier} {particles}")
+            else:
+                target = lit_to_str(node.args[1])
+                self.cmds.append(f"effect clear {target}")
             return None
-            
+
         if name == "kill":
             target = lit_to_str(node.args[0]) if node.args else "@e"
             self.cmds.append(f"kill {target}")
             return None
-            
+
+        if name == "damage":
+            target = lit_to_str(node.args[0])
+            amount = lit_to_str(node.args[1])
+            dmg_type = lit_to_str(get_kwarg("type", "minecraft:generic"))
+            cmd = f"damage {target} {amount} {dmg_type}"
+            if "at" in kwargs: cmd += f" at {lit_to_str(kwargs['at'])}"
+            if "by" in kwargs: cmd += f" by {lit_to_str(kwargs['by'])}"
+            if "from" in kwargs: cmd += f" from {lit_to_str(kwargs['from'])}"
+            self.cmds.append(cmd)
+            return None
+
+        if name == "random":
+            action = lit_to_str(node.args[0])
+            range_ = lit_to_str(node.args[1])
+            target = lit_to_str(get_kwarg("target", "@s"))
+            self.cmds.append(f"random {action} {range_} {target}")
+            return None
+
+        if name == "tag":
+            target = lit_to_str(node.args[0])
+            action = lit_to_str(node.args[1])
+            tag_name = lit_to_str(node.args[2])
+            self.cmds.append(f"tag {target} {action} {tag_name}")
+            return None
+
+        if name == "team":
+            action = lit_to_str(node.args[0])
+            team_name = lit_to_str(node.args[1])
+            members = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            self.cmds.append(f"team {action} {team_name} {members}".strip())
+            return None
+
+        if name == "time":
+            action = lit_to_str(node.args[0])
+            value = lit_to_str(node.args[1])
+            self.cmds.append(f"time {action} {value}")
+            return None
+
+        if name == "weather":
+            action = lit_to_str(node.args[0])
+            duration = lit_to_str(get_kwarg("duration", 600))
+            self.cmds.append(f"weather {action} {duration}")
+            return None
+
+        if name == "xp" or name == "experience":
+            target = lit_to_str(node.args[0])
+            amount = lit_to_str(node.args[1])
+            type_ = lit_to_str(get_kwarg("type", "levels"))
+            self.cmds.append(f"xp add {target} {amount} {type_}")
+            return None
+
+        if name == "title":
+            target = lit_to_str(node.args[0])
+            action = lit_to_str(node.args[1])
+            if action in ["title", "subtitle", "actionbar"]:
+                text = lit_to_str(node.args[2])
+                self.cmds.append(f'title {target} {action} {{"text":"{text}"}}')
+            else:
+                self.cmds.append(f"title {target} {action}")
+            return None
+
+        if name == "enchant":
+            target = lit_to_str(node.args[0])
+            ench = lit_to_str(node.args[1])
+            level = lit_to_str(get_kwarg("level", 1))
+            self.cmds.append(f"enchant {target} {ench} {level}")
+            return None
+
+        if name == "attribute":
+            target = lit_to_str(node.args[0])
+            attr = lit_to_str(node.args[1])
+            action = lit_to_str(node.args[2])
+            value = lit_to_str(node.args[3]) if len(node.args) > 3 else ""
+            self.cmds.append(f"attribute {target} {attr} {action} {value}".strip())
+            return None
+
+        if name == "clear":
+            target = lit_to_str(node.args[0]) if node.args else "@a"
+            item = lit_to_str(node.args[1]) if len(node.args) > 1 else ""
+            count = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            self.cmds.append(f"clear {target} {item} {count}".strip())
+            return None
+
+        if name == "clone":
+            from_ = lit_to_str(get_kwarg("from", (0,0,0)))
+            to = lit_to_str(get_kwarg("to", (0,0,0)))
+            dest = lit_to_str(get_kwarg("dest", (0,0,0)))
+            mode = lit_to_str(get_kwarg("mode", "replace"))
+            self.cmds.append(f"clone {from_} {to} {dest} {mode}")
+            return None
+
+        if name == "bossbar":
+            action = lit_to_str(node.args[0])
+            id_ = lit_to_str(node.args[1])
+            extra = " ".join([lit_to_str(a) for a in node.args[2:]])
+            self.cmds.append(f"bossbar {action} {id_} {extra}".strip())
+            return None
+
+        if name == "advancement":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1])
+            criterion = lit_to_str(node.args[2])
+            adv = lit_to_str(node.args[3]) if len(node.args) > 3 else ""
+            self.cmds.append(f"advancement {action} {target} {criterion} {adv}".strip())
+            return None
+
+        if name == "gamemode":
+            mode = lit_to_str(node.args[0])
+            target = lit_to_str(get_kwarg("target", "@s"))
+            self.cmds.append(f"gamemode {mode} {target}")
+            return None
+
+        if name == "gamerule":
+            rule = lit_to_str(node.args[0])
+            value = lit_to_str(node.args[1]) if len(node.args) > 1 else ""
+            self.cmds.append(f"gamerule {rule} {value}".strip())
+            return None
+
+        if name == "item":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1])
+            slot = lit_to_str(node.args[2])
+            item = lit_to_str(node.args[3]) if len(node.args) > 3 else ""
+            count = lit_to_str(get_kwarg("count", 1))
+            self.cmds.append(f"item {action} {target} {slot} {item} {count}".strip())
+            return None
+
+        if name == "schedule":
+            action = lit_to_str(node.args[0])
+            func = lit_to_str(node.args[1])
+            time = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            mode = lit_to_str(get_kwarg("mode", "replace"))
+            self.cmds.append(f"schedule {action} {func} {time} {mode}".strip())
+            return None
+
+        if name == "scoreboard":
+            action = lit_to_str(node.args[0])
+            sub = lit_to_str(node.args[1])
+            extra = " ".join([lit_to_str(a) for a in node.args[2:]])
+            self.cmds.append(f"scoreboard {action} {sub} {extra}".strip())
+            return None
+
+        if name == "spreadplayers":
+            center = lit_to_str(get_kwarg("center", (0, 0)))
+            spread = lit_to_str(get_kwarg("spread", (0, 0)))
+            max_height = lit_to_str(get_kwarg("max_height", 256))
+            respect_teams = lit_to_str(get_kwarg("respect_teams", True))
+            target = lit_to_str(node.args[0])
+            self.cmds.append(f"spreadplayers {center} {spread} {max_height} {respect_teams} {target}")
+            return None
+
+        if name == "stopsound":
+            target = lit_to_str(node.args[0])
+            sound = lit_to_str(node.args[1]) if len(node.args) > 1 else ""
+            self.cmds.append(f"stopsound {target} * {sound}".strip())
+            return None
+
+        if name == "worldborder":
+            action = lit_to_str(node.args[0])
+            extra = " ".join([lit_to_str(a) for a in node.args[1:]])
+            self.cmds.append(f"worldborder {action} {extra}".strip())
+            return None
+
+        if name == "recipe":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1])
+            recipe = lit_to_str(node.args[2]) if len(node.args) > 2 else "*"
+            self.cmds.append(f"recipe {action} {target} {recipe}")
+            return None
+
+        if name == "forceload":
+            action = lit_to_str(node.args[0])
+            pos = lit_to_str(node.args[1]) if len(node.args) > 1 else ""
+            self.cmds.append(f"forceload {action} {pos}".strip())
+            return None
+
+        if name == "setworldspawn":
+            pos = lit_to_str(get_kwarg("pos", (0, 0, 0)))
+            self.cmds.append(f"setworldspawn {pos}")
+            return None
+
+        if name == "spawnpoint":
+            target = lit_to_str(node.args[0]) if node.args else "@s"
+            pos = lit_to_str(get_kwarg("pos", (0, 0, 0)))
+            self.cmds.append(f"spawnpoint {target} {pos}")
+            return None
+
+        if name == "spectate":
+            target = lit_to_str(node.args[0]) if node.args else "@s"
+            player = lit_to_str(get_kwarg("player", "@s"))
+            self.cmds.append(f"spectate {target} {player}")
+            return None
+
+        if name == "data":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1])
+            path = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            self.cmds.append(f"data {action} {target} {path}".strip())
+            return None
+
+        if name == "ride":
+            target = lit_to_str(node.args[0])
+            action = lit_to_str(node.args[1])
+            vehicle = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            self.cmds.append(f"ride {target} {action} {vehicle}".strip())
+            return None
+
+        if name == "loot":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1])
+            source = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            self.cmds.append(f"loot {action} {target} {source}".strip())
+            return None
+
+        if name == "locate":
+            structure = lit_to_str(node.args[0])
+            self.cmds.append(f"locate structure {structure}")
+            return None
+
+        if name == "fillbiome":
+            from_ = lit_to_str(get_kwarg("from", (0,0,0)))
+            to = lit_to_str(get_kwarg("to", (0,0,0)))
+            biome = lit_to_str(node.args[0])
+            self.cmds.append(f"fillbiome {from_} {to} {biome}")
+            return None
+
+        if name == "place":
+            feature = lit_to_str(node.args[0])
+            pos = lit_to_str(get_kwarg("pos", (0, 0, 0)))
+            self.cmds.append(f"place feature {feature} {pos}")
+            return None
+
+        if name == "trigger":
+            objective = lit_to_str(node.args[0])
+            action = lit_to_str(get_kwarg("action", "set"))
+            value = lit_to_str(get_kwarg("value", 0))
+            self.cmds.append(f"trigger {objective} {action} {value}")
+            return None
+
+        if name == "defaultgamemode":
+            mode = lit_to_str(node.args[0])
+            self.cmds.append(f"defaultgamemode {mode}")
+            return None
+
+        if name == "difficulty":
+            level = lit_to_str(node.args[0])
+            self.cmds.append(f"difficulty {level}")
+            return None
+
+        if name == "dialog":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1])
+            body = lit_to_str(node.args[2]) if len(node.args) > 2 else ""
+            self.cmds.append(f"dialog {action} {target} {body}".strip())
+            return None
+
+        if name == "transfer":
+            server = lit_to_str(node.args[0])
+            port = lit_to_str(get_kwarg("port", 25565))
+            self.cmds.append(f"transfer {server} {port}")
+            return None
+
+        if name == "setidletimeout":
+            minutes = lit_to_str(node.args[0])
+            self.cmds.append(f"setidletimeout {minutes}")
+            return None
+
+        if name == "whitelist":
+            action = lit_to_str(node.args[0])
+            target = lit_to_str(node.args[1]) if len(node.args) > 1 else ""
+            self.cmds.append(f"whitelist {action} {target}".strip())
+            return None
+
+        if name == "ban" or name == "ban-ip" or name == "pardon" or name == "pardon-ip" or name == "kick" or name == "op" or name == "deop":
+            target = lit_to_str(node.args[0])
+            reason = lit_to_str(node.args[1]) if len(node.args) > 1 else ""
+            self.cmds.append(f"{name} {target} {reason}".strip())
+            return None
+
+        if name == "list" or name == "banlist" or name == "seed" or name == "reload" or name == "stop" or name == "publish" or name == "debug" or name == "perf" or name == "jfr" or name == "help" or name == "version" or name == "test" or name == "tick" or name == "me" or name == "teammsg" or name == "tm" or name == "tell" or name == "msg" or name == "w" or name == "waypoint":
+            extra = " ".join([lit_to_str(a) for a in node.args])
+            self.cmds.append(f"{name} {extra}".strip())
+            return None
+
         if name == "run":
             cmd_str_node = node.args[0]
             if not isinstance(cmd_str_node, Literal) or cmd_str_node.lit_type != "string":
@@ -522,6 +810,13 @@ class CodeGenerator(Visitor):
             self.cmds = old_cmds
             return None
             
+        # UNIVERSAL NATIVE COMMAND FALLBACK
+        if f"{self.current_ns}:{node.name}" not in self.ir:
+            vals = [lit_to_str(arg) for arg in node.args]
+            self.cmds.append(f"{name} {' '.join(vals)}".strip())
+            return None
+            
+        # USER FUNCTION CALL
         args = [a.accept(self) for a in node.args]
         for i, (t, l) in enumerate(args):
             obj = self._get_obj(node.args[i])

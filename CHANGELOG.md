@@ -1,7 +1,3 @@
-Here is the complete, professional changelog for the Aether compiler, reflecting the massive v2.0 refactor. You can save this directly as `CHANGELOG.md` in your repository.
-
-***
-
 # Changelog
 
 All notable changes to the Aether programming language and compiler are documented in this file.
@@ -9,7 +5,37 @@ All notable changes to the Aether programming language and compiler are document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] : The Professional Refactor
+## [2.2.0] - Production-Ready Command DSL
+
+This release focuses on making Aether feel like writing raw Minecraft code by providing clean, typed wrappers for almost every command in the game.
+
+### Added
+- **Comprehensive Native Command DSL:** Added structured, keyword-argument wrappers for almost every vanilla Minecraft command, including `bossbar`, `attribute`, `damage`, `random`, `data`, `scoreboard`, `recipe`, `tag`, `team`, `time`, `weather`, `xp`, `ride`, `loot`, `place`, `fillbiome`, and many more.
+- **Universal Fallback:** Any command without an explicit wrapper automatically formats function arguments into a raw vanilla command string, ensuring 100% game coverage.
+
+### Fixed
+- Fixed a critical `TypeError` in Python 3.14+ caused by a missing parenthesis on `auto` in the `TokenType` enum.
+
+---
+
+## [2.1.0] - The Bolt-Style Update
+
+This release introduces massive quality-of-life features to Aether, bringing it closer to the "supercharged command language" feel of Bolt/Beet.
+
+### Added
+- **Execute Blocks:** Added native `execute as "@e" at "@s":` syntax that cleanly scopes commands to entities without raw `run()` strings.
+- **Entity Wrapper:** Added the `Entity` type and `entity()` constructor. Selectors can now be manipulated as native objects (e.g., `target.tp(0, 100, 0)`, `target.kill()`).
+- **Dict Literals (NBT):** Added `{}` syntax for NBT compounds. The compiler automatically serializes them to Minecraft NBT format for `summon()` etc.
+- **`wait()` Coroutine:** Added the `wait(ticks)` function. It splits the current function into multiple `.mcfunction` files and uses `/schedule` to pause execution seamlessly.
+
+### Changed
+- Updated Lexer and Parser to handle the new `execute` blocks, `{}` dict literals, and `entity()` wrapper syntax.
+- Updated Codegen with `_finalize_function` to handle `wait()` function splitting and `_dict_to_nbt` for serialization.
+- Updated Semantic Analyzer and Type Checker to validate the new constructs and track the `Entity` class natively.
+
+---
+
+## [2.0.0] - The Professional Refactor
 
 This release represents a complete architectural overhaul of the Aether compiler, transitioning it from a functional prototype into a professionally engineered compiler pipeline. 
 
@@ -59,7 +85,7 @@ This release represents a complete architectural overhaul of the Aether compiler
 
 ---
 
-## [1.0.0] : The MVP Release
+## [1.0.0] - The MVP Release
 
 The initial, feature-complete Minimum Viable Product of the Aether language.
 
