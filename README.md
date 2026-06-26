@@ -239,9 +239,9 @@ error[E202]: Expected ':' (Got NEWLINE)
 
 ## 📖 Documentation
 
-For the complete language specification, grammar, and deep-dive tutorials, read the [**Aether Handbook**](https://github.com/torbenn211/aether-compiler/blob/main/HANDBOOK.md).
+For the complete language specification, grammar, and deep-dive tutorials, read the [**Aether Handbook**](https://github.com/torbenn211/aether-compiler/book.md).
 
-For a detailed breakdown of compiler changes, see the [**Changelog**](https://github.com/torbenn211/aether-compiler/blob/main/CHANGELOG.md).
+For a detailed breakdown of compiler changes, see the [**Changelog**](https://github.com/torbenn211/aether-compiler/CHANGELOG.md).
 
 ---
 
