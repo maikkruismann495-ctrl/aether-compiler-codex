@@ -275,7 +275,7 @@ Aether is statically typed. Type inference is supported.
 ### 2. `string`
 * **Purpose:** UTF-8 text.
 * **Memory Model:** Stored in `storage <namespace>:data` as NBT strings.
-* **Limitations:** Cannot be dynamically concatenated at runtime in MVP. Use compile-time interpolation.
+* **Limitations:** Cannot be dynamically concatenated at runtime in MVP. Use compile-time interpolation or `say()` dynamic JSON generation.
 
 ### 3. `bool`
 * **Purpose:** `true` or `false`.
@@ -286,7 +286,7 @@ Aether is statically typed. Type inference is supported.
 # Part 5 — Variables
 
 ### Declaration & Mutability
-Variables are declared using `local` or just assignment. They must be initialized. All variables are mutable by default.
+Variables are declared using `local`. They must be initialized. All variables are mutable by default.
 ```python
 local score = 0       # Inferred as int
 local name: string = "Alex"
@@ -295,6 +295,47 @@ name = "Bob"          # Allowed
 
 ### Scope and Lifetime
 Variables exist only within the `def` block they were created in. When a function ends, its local variables are conceptually discarded (their scoreboard/NBT locations will be overwritten by future function calls).
+
+### External Objectives (`@objective` decorator)
+By default, Aether maps all `int` and `bool` variables to its internal `ae_int` scoreboard objective. This is by design: it keeps the generated datapacks clean, makes debugging easy (`/scoreboard objectives setdisplay sidebar ae_int`), and avoids boilerplate `scoreboard objectives add` commands.
+
+However, sometimes you need to read or write to a **vanilla objective** (like `deathCount` or `food`) or an objective created by an external datapack. Aether provides the `@objective("name")` decorator for this.
+
+**Syntax:**
+```python
+@objective("objective_name")
+local var_name: int = value
+```
+
+**Example:**
+```python
+def main():
+    @objective("deathCount")
+    local deaths: int = 0
+    
+    @objective("currency")
+    local gold: int = 100
+    
+    if deaths > 0:
+        gold -= 10 * deaths
+```
+
+**Compiler Implementation:**
+When Aether sees `@objective`, it skips allocating the variable on `ae_int`. Instead, it uses the provided objective name for all subsequent `scoreboard players operation` and `scoreboard players set` commands.
+```mcfunction
+# @objective("deathCount") local deaths: int = 0
+scoreboard players set var_deaths_0 deathCount 0
+
+# @objective("currency") local gold: int = 100
+scoreboard players set var_gold_0 currency 100
+
+# if deaths > 0:
+scoreboard players set temp_0 ae_int 0
+execute if score var_deaths_0 deathCount matches 1.. run scoreboard players set temp_0 ae_int 1
+execute if score temp_0 ae_int matches 1 run function my_game:branch_if_0
+```
+
+> **Warning:** Aether assumes the external objective already exists. You must create it via a `run("scoreboard objectives add ...")` command or a manual JSON file in your `data/` folder.
 
 ---
 
@@ -420,8 +461,25 @@ summon("minecraft:zombie", at=(~, ~, ~))
 give("@a", "minecraft:apple", count=5)
 ```
 
+### Dynamic `say()` (Wiki-Compliant `tellraw` JSON)
+When you use `say()` with a string containing `{var}`, Aether does **not** just use macros. It dynamically builds a valid, wiki-compliant `tellraw` JSON array. It reads directly from scoreboards and NBT storage at runtime!
+
+```python
+@objective("deathCount")
+local deaths: int = 0
+local gold: int = 100
+
+say("You have lost {gold} gold to {deaths} deaths.")
+```
+
+**Generated `.mcfunction`:**
+```mcfunction
+tellraw @a [{"text":"You have lost "},{"score":{"name":"var_gold_0","objective":"ae_int"}},{"text":" gold to "},{"score":{"name":"var_deaths_0","objective":"deathCount"}},{"text":" deaths."}]
+```
+This is massively performant and completely avoids macro overhead for text display.
+
 ### Dynamic `run()` (Macros)
-Inject variables into raw commands using `{var}`.
+For raw commands that aren't `say`, you can use `run()` and inject variables using `{var}`.
 ```python
 local target = "@p"
 run("kill {target}")
@@ -468,6 +526,9 @@ Aether fails fast with precise location tracking.
 
 # Part 20 — Advanced Topics
 
+### Interoperability with Vanilla Systems
+By using the `@objective("name")` decorator, you can seamlessly bridge Aether's internal memory management with vanilla Minecraft systems. This is highly useful for reading vanilla stats (like `deathCount`), interacting with the `food` objective, or integrating with external datapacks that rely on specific scoreboard objectives.
+
 ### Compile-Time Execution
 Because the optimizer evaluates math and loops at compile time, you can use Aether to generate massive structures (like a sphere) without any runtime lag.
 ```python
@@ -510,6 +571,7 @@ def remove_trail():
 # Part 22 — Language Reference
 
 * **Keywords:** `namespace`, `class`, `def`, `if`, `elif`, `else`, `for`, `while`, `return`, `local`, `import`, `in`, `range`, `self`, `and`, `or`, `not`, `true`, `false`, `int`, `string`, `bool`.
+* **Decorators:** `@objective("name")`.
 * **Builtins:** `say`, `give`, `summon`, `tp`, `setblock`, `fill`, `effect`, `particle`, `playsound`, `clear`, `title`, `kill`, `run`.
 * **Math:** `math::sin`, `math::cos`, `math::sqrt`.
 
@@ -538,4 +600,7 @@ my_datapack/
 A: No, Minecraft scoreboards are integers. Use scaled integers (e.g., `1000` = `1.0`).
 
 **Q: How do I debug?**
-A: Run `/scoreboard objectives setdisplay sidebar ae_int` in Minecraft to see all your variables on screen!
+A: Run `/scoreboard objectives setdisplay sidebar ae_int` in Minecraft to see all your internal variables on screen!
+
+**Q: How do I read vanilla death counts?**
+A: Use the `@objective("deathCount")` decorator on an `int` variable.
