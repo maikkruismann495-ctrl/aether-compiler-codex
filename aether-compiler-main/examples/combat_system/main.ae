@@ -1,0 +1,12 @@
+namespace "combat";
+
+function main() {
+    scoreboard objectives add zombie_kills minecraft.killed:minecraft.zombie
+    say Combat example loaded
+}
+
+function tick() {
+    if score @s zombie_kills matches 10.. {
+        tellraw @a {"text":"Zombie hunter milestone reached","color":"gold"}
+    }
+}

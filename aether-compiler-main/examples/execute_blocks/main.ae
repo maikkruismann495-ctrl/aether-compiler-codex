@@ -1,0 +1,8 @@
+namespace "execute_blocks";
+
+function tick() {
+    execute as @e[type=zombie] at @s {
+        particle minecraft:flame ~ ~1 ~ 0 0 0 0 1
+        effect give @s minecraft:speed 1 0 true
+    }
+}

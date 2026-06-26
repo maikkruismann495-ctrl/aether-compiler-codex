@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:stick",
+    "minecraft:coal"
+  ],
+  "result": {
+    "id": "minecraft:torch",
+    "count": 4
+  }
+}

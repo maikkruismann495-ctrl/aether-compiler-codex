@@ -1,0 +1,6 @@
+namespace "basic";
+
+function main() {
+    let hp: int = 20;
+    tellraw @a {"text":"Basic example loaded. HP {hp}","color":"green"}
+}
