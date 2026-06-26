@@ -1,0 +1,27 @@
+# main.ae
+namespace my_game
+
+class Player:
+    hp: int
+    name: string
+
+    def __init__(self, name: str, hp: int):
+        self.name = name
+        self.hp = hp
+
+    def take_damage(self, amount: int):
+        self.hp -= amount
+        if self.hp <= 0:
+            say("Player died!")
+        else:
+            say("Took damage.")
+
+def main():
+    p1 = Player("Steve", 100)
+    p1.take_damage(20)
+    
+    # Native Command DSL
+    particle("minecraft:flame", at=(0, 10, 0), count=10, speed=0.1, mode="force")
+    
+    # Inline command
+    run("execute as @a run say Hello World")

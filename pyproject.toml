@@ -1,0 +1,16 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aether-compiler"
+version = "1.0.0"
+description = "Aether Programming Language for Minecraft 1.21+ Datapacks"
+requires-python = ">=3.8"
+
+[project.scripts]
+aether = "aether.cli:main"
+
+[tool.setuptools]
+packages = ["aether"]
