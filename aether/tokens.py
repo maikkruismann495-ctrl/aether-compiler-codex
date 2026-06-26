@@ -1,4 +1,4 @@
-# aether/tokens.py
+# src/aether/tokens.py
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -11,17 +11,17 @@ class TokenType(Enum):
     # Identifiers & Keywords
     IDENT = auto(); NAMESPACE = auto(); DEF = auto(); CLASS = auto(); IMPORT = auto(); LOCAL = auto()
     IF = auto(); ELIF = auto(); ELSE = auto(); FOR = auto(); WHILE = auto(); RETURN = auto()
-    IN = auto(); RANGE = auto(); SELF = auto()
+    IN = auto(); RANGE = auto(); SELF = auto(); EXECUTE = auto()
     AND = auto(); OR = auto(); NOT = auto()
     INT_TYPE = auto(); STRING_TYPE = auto(); BOOL_TYPE = auto()
     # Operators
     PLUS = auto(); MINUS = auto(); STAR = auto(); SLASH = auto(); PERCENT = auto()
-    ASSIGN = auto(); EQ = auto(); NEQ = auto(); LT = auto(); GT = auto(); LTE = auto(); GTE = auto()
+    ASSIGN = auto(); EQ = auto(); NEQ = auto(); LT = auto(); GT = auto(); LTE = auto(); GTE = auto
     PLUSEQ = auto(); MINUSEQ = auto(); STAREQ = auto(); SLASHEQ = auto(); PERCENTEQ = auto()
     COLON = auto(); DOT = auto(); COMMA = auto(); ARROW = auto()
     # Delimiters
-    LPAREN = auto(); RPAREN = auto(); LBRACKET = auto(); RBRACKET = auto()
-    AT = auto() 
+    LPAREN = auto(); RPAREN = auto(); LBRACKET = auto(); RBRACKET = auto(); LBRACE = auto(); RBRACE = auto()
+    AT = auto()
 
 @dataclass
 class Token:
@@ -34,7 +34,7 @@ class Token:
 
 KEYWORDS = {
     "namespace": TokenType.NAMESPACE, "def": TokenType.DEF, "class": TokenType.CLASS, "import": TokenType.IMPORT,
-    "local": TokenType.LOCAL,
+    "local": TokenType.LOCAL, "execute": TokenType.EXECUTE,
     "if": TokenType.IF, "elif": TokenType.ELIF, "else": TokenType.ELSE, "for": TokenType.FOR, "while": TokenType.WHILE,
     "return": TokenType.RETURN, "in": TokenType.IN, "range": TokenType.RANGE, "self": TokenType.SELF,
     "true": TokenType.TRUE, "false": TokenType.FALSE,

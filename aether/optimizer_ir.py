@@ -1,14 +1,9 @@
-# aether/optimizer_ir.py
+# src/aether/optimizer_ir.py
 
 import re
 from typing import Dict, List, Set
 
 class IROptimizer:
-    """
-    Post-generation IR optimizer. Mimics Bolt's optimization passes.
-    1. Dead Code Elimination (removes unused scoreboard/data writes).
-    2. Unused Function Elimination (removes generated functions that are never called).
-    """
     def __init__(self, ir: Dict[str, List[str]]):
         self.ir = ir
 

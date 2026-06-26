@@ -1,4 +1,4 @@
-# aether/codegen.py
+# src/aether/codegen.py
 
 import re
 from typing import Dict, List, Optional, Tuple, Any
@@ -6,11 +6,6 @@ from .ast_nodes import *
 from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 
 class CodeGenerator(Visitor):
-    """
-    Translates the optimized AST into Minecraft command strings (IR).
-    Maps int/bool -> scoreboards, string/objects -> NBT storage.
-    Generates 1.21 macros for dynamic commands.
-    """
     def __init__(self, ast: Program, engine: DiagnosticEngine, root_ns: str = "aether"):
         self.ast = ast
         self.engine = engine
@@ -36,6 +31,36 @@ class CodeGenerator(Visitor):
         
         self.ast.accept(self)
         return self.ir
+
+    def _finalize_function(self, full_name: str, cmds: List[str]) -> List[str]:
+        """Post-processes a function to handle wait() coroutines."""
+        if not any("__WAIT__(" in c for c in cmds):
+            return cmds
+            
+        final_cmds = []
+        cont_idx = 0
+        current_cmds = cmds
+        
+        while True:
+            wait_idx = -1
+            for i, c in enumerate(current_cmds):
+                if c.startswith("__WAIT__("):
+                    wait_idx = i
+                    break
+            
+            if wait_idx != -1:
+                ticks = current_cmds[wait_idx].split("(")[1].split(")")[0]
+                final_cmds.extend(current_cmds[:wait_idx])
+                final_cmds.append(f"schedule function {full_name}__cont_{cont_idx} {ticks}t")
+                final_cmds.append("return 1")
+                
+                cont_name = f"{full_name}__cont_{cont_idx}"
+                current_cmds = current_cmds[wait_idx+1:]
+                self.ir[cont_name] = self._finalize_function(cont_name, current_cmds)
+                return final_cmds
+            else:
+                final_cmds.extend(current_cmds)
+                return final_cmds
 
     def _lookup(self, name): 
         for s in reversed(self.scopes):
@@ -105,7 +130,7 @@ class CodeGenerator(Visitor):
                 self.scopes[-1][p.name] = {"type": p.param_type.name, "loc": loc, "objective": "ae_int"}
 
         node.body.accept(self)
-        self.ir[full] = self.cmds
+        self.ir[full] = self._finalize_function(full, self.cmds)
         self.cmds = p_cmds; self.scopes.pop()
         self.class_context = None
 
@@ -158,7 +183,7 @@ class CodeGenerator(Visitor):
         fif = f"{self.current_ns}:{ifn}"
         p = self.cmds; self.cmds = []
         node.then_block.accept(self)
-        self.ir[fif] = self.cmds
+        self.ir[fif] = self._finalize_function(fif, self.cmds)
         self.cmds = p
         self.cmds.append(f"execute if score {l} {obj} matches 1 run function {fif}")
         if node.else_stmt:
@@ -166,7 +191,7 @@ class CodeGenerator(Visitor):
             fel = f"{self.current_ns}:{efn}"
             p = self.cmds; self.cmds = []
             node.else_stmt.accept(self)
-            self.ir[fel] = self.cmds
+            self.ir[fel] = self._finalize_function(fel, self.cmds)
             self.cmds = p
             self.cmds.append(f"execute if score {l} {obj} matches 0 run function {fel}")
 
@@ -192,13 +217,30 @@ class CodeGenerator(Visitor):
         self.cmds.append(f"execute unless score {l} {obj} matches 1 run return 1")
         self.cmds.append(f"function {fb}")
         self.cmds.append(f"function {fw}")
-        self.ir[fw] = self.cmds
+        self.ir[fw] = self._finalize_function(fw, self.cmds)
         self.cmds = []
         self.scopes.append({})
         node.body.accept(self)
         self.scopes.pop()
-        self.ir[fb] = self.cmds
+        self.ir[fb] = self._finalize_function(fb, self.cmds)
         self.cmds = p
+
+    def visit_ExecuteStmt(self, node: ExecuteStmt):
+        chain_str = ""
+        for sub, sel_node in node.chain:
+            if isinstance(sel_node, Literal):
+                chain_str += f"{sub} {sel_node.value} "
+            else:
+                self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, "Dynamic selectors in execute blocks not supported in MVP.", sel_node.line, sel_node.col)
+                
+        old_cmds = self.cmds
+        self.cmds = []
+        node.body.accept(self)
+        body_cmds = self.cmds
+        self.cmds = old_cmds
+        
+        for cmd in body_cmds:
+            self.cmds.append(f"execute {chain_str}run {cmd}")
 
     def visit_ReturnStmt(self, node):
         if node.value:
@@ -228,6 +270,26 @@ class CodeGenerator(Visitor):
         if node.lit_type == "string":
             l = self._alloc_temp("string"); safe = node.value.replace('"', '\\"')
             self.cmds.append(f'data modify storage {self.current_ns}:data {l} set value "{safe}"'); return ("string", l)
+
+    def visit_DictLiteral(self, node: DictLiteral):
+        nbt_str = self._dict_to_nbt(node.elements)
+        l = self._alloc_temp("nbt")
+        self.cmds.append(f'data modify storage {self.current_ns}:data {l} set value {nbt_str}')
+        return ("nbt", l)
+
+    def _dict_to_nbt(self, elements: Dict[str, ASTNode]) -> str:
+        parts = []
+        for k, v_node in elements.items():
+            if isinstance(v_node, Literal):
+                if v_node.lit_type == "string":
+                    parts.append(f'{k}:"{v_node.value}"')
+                elif v_node.lit_type == "int":
+                    parts.append(f'{k}:{v_node.value}')
+                elif v_node.lit_type == "bool":
+                    parts.append(f'{k}:{"1b" if v_node.value else "0b"}')
+            elif isinstance(v_node, DictLiteral):
+                parts.append(f'{k}:{self._dict_to_nbt(v_node.elements)}')
+        return "{" + ",".join(parts) + "}"
 
     def visit_FormatString(self, node):
         s = ""
@@ -287,6 +349,24 @@ class CodeGenerator(Visitor):
             if isinstance(n, TupleLiteral): return " ".join(lit_to_str(e) for e in n.elements)
             self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, f"Command '{name}' requires literal arguments for MVP.", n.line, n.col)
             return ""
+
+        # BOLT-STYLE WAIT COROUTINE
+        if name == "wait":
+            if not isinstance(node.args[0], Literal) or node.args[0].lit_type != "int":
+                self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "wait() requires a literal integer.", node.line, node.col)
+                return None
+            self.cmds.append(f"__WAIT__({node.args[0].value})")
+            return None
+
+        # BOLT-STYLE ENTITY WRAPPER
+        if name == "entity":
+            if not isinstance(node.args[0], Literal) or node.args[0].lit_type != "string":
+                self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "entity() requires a literal string selector.", node.line, node.col)
+                return None
+            loc = self._alloc_var("entity", "Entity")
+            self.scopes[-1][loc]["selector"] = node.args[0].value
+            self.cmds.append(f'data modify storage {self.current_ns}:data {loc} set value "{node.args[0].value}"')
+            return ("Entity", loc)
             
         if name == "say":
             arg = node.args[0]
@@ -349,7 +429,11 @@ class CodeGenerator(Visitor):
         if name == "summon":
             entity = lit_to_str(node.args[0])
             at = lit_to_str(get_kwarg("at", (0,0,0)))
-            nbt = lit_to_str(get_kwarg("nbt", ""))
+            nbt_node = get_kwarg("nbt", "")
+            if isinstance(nbt_node, DictLiteral):
+                nbt = self._dict_to_nbt(nbt_node.elements)
+            else:
+                nbt = lit_to_str(nbt_node)
             cmd = f"summon {entity} {at}"
             if nbt: cmd += f" {nbt}"
             self.cmds.append(cmd)
@@ -446,14 +530,43 @@ class CodeGenerator(Visitor):
         self.cmds.append(f"function {self.current_ns}:{node.name}")
         return None
 
-    def visit_MethodCall(self, node):
-        obj_path = self._get_path(node.obj)
+    def visit_MethodCall(self, node: MethodCall):
         obj_type = node.obj.inferred_type if hasattr(node.obj, 'inferred_type') else "Entity"
+        
+        # BOLT-STYLE ENTITY OBJECT METHODS
+        if obj_type == "Entity":
+            v = self._lookup(node.obj.name)
+            if not v or "selector" not in v:
+                self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, "Entity variable not found or invalid.", node.line, node.col)
+                return None
+            sel = v["selector"]
+            
+            if node.method == "kill":
+                self.cmds.append(f"kill {sel}")
+            elif node.method == "tp":
+                x = node.args[0].value if isinstance(node.args[0], Literal) else "~"
+                y = node.args[1].value if isinstance(node.args[1], Literal) else "~"
+                z = node.args[2].value if isinstance(node.args[2], Literal) else "~"
+                self.cmds.append(f"tp {sel} {x} {y} {z}")
+            elif node.method == "say":
+                if isinstance(node.args[0], Literal):
+                    self.cmds.append(f'tellraw @a {{"text":"[{sel}] {node.args[0].value}"}}')
+            elif node.method == "set_nbt":
+                if isinstance(node.args[0], DictLiteral):
+                    nbt = self._dict_to_nbt(node.args[0].elements)
+                    self.cmds.append(f"data merge entity {sel} {nbt}")
+                elif isinstance(node.args[0], Literal):
+                    self.cmds.append(f"data merge entity {sel} {node.args[0].value}")
+            return None
+
+        # Standard OOP method call
+        obj_path = self._get_path(node.obj)
         self.cmds.append(f'data modify storage {self.current_ns}:data macro_obj_path set value "{obj_path}"')
         args = [a.accept(self) for a in node.args]
         for i, (t, l) in enumerate(args):
             obj = self._get_obj(node.args[i])
             if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} {obj}")
             else: self.cmds.append(f"data modify storage {self.current_ns}:data arg{i} set from storage {self.current_ns}:data {l}")
+            
         self.cmds.append(f"function {self.current_ns}:{obj_type}_{node.method} with storage {self.current_ns}:data {{macro_obj_path:'{obj_path}'}}")
         return None

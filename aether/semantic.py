@@ -1,4 +1,4 @@
-# aether/semantic.py
+# src/aether/semantic.py
 
 from typing import Dict, List, Optional, Any
 from .ast_nodes import *
@@ -6,9 +6,6 @@ from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 from .symbol_table import SymbolTable
 
 class SemanticAnalyzer(Visitor):
-    """
-    Walks the AST to validate scopes and function calls using a formal Symbol Table.
-    """
     def __init__(self, ast: Program, engine: DiagnosticEngine):
         self.ast = ast
         self.engine = engine
@@ -19,9 +16,13 @@ class SemanticAnalyzer(Visitor):
             "summon": {"params": ["string", "int", "int", "int"], "return": None},
             "particle": {"params": ["string", "int", "int", "int", "int", "int"], "return": None},
             "run": {"params": ["string"], "return": None},
+            "wait": {"params": ["int"], "return": None},
+            "entity": {"params": ["string"], "return": "Entity"},
             "time.sleep": {"params": ["int"], "return": None},
         }
-        self.classes: Dict[str, Dict[str, str]] = {}
+        self.classes: Dict[str, Dict[str, str]] = {
+            "Entity": {"selector": "string"}
+        }
         self.ret_type: Optional[str] = None
 
     def analyze(self):
@@ -77,6 +78,9 @@ class SemanticAnalyzer(Visitor):
         v = node.value.accept(self)
         if t != v: self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, f"Cannot assign {v} to {t}", node.line, node.col)
 
+    def visit_CompoundAssign(self, node):
+        node.target.accept(self); node.value.accept(self)
+
     def visit_IfStmt(self, node):
         if node.condition.accept(self) != "bool":
             self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "If condition must be bool", node.line, node.col)
@@ -97,6 +101,11 @@ class SemanticAnalyzer(Visitor):
             self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "While condition must be bool", node.line, node.col)
         node.body.accept(self)
 
+    def visit_ExecuteStmt(self, node):
+        for sub, sel in node.chain:
+            sel.accept(self)
+        node.body.accept(self)
+
     def visit_ReturnStmt(self, node):
         if self.ret_type is None:
             if node.value: self.engine.report(ErrorCodes.INVALID_RETURN, Severity.ERROR, "Cannot return value from void function", node.line, node.col)
@@ -111,6 +120,10 @@ class SemanticAnalyzer(Visitor):
         return node.lit_type
         
     def visit_TupleLiteral(self, node): return "tuple"
+    def visit_DictLiteral(self, node): 
+        for v in node.elements.values(): v.accept(self)
+        return "nbt"
+        
     def visit_FormatString(self, node): 
         for p in node.parts:
             if not isinstance(p, str): p.accept(self)
@@ -170,6 +183,11 @@ class SemanticAnalyzer(Visitor):
 
     def visit_MethodCall(self, node):
         t = node.obj.accept(self)
+        # For Entity wrapper, we don't require explicit method definitions in the functions dict for MVP
+        if t == "Entity":
+            node.inferred_type = None
+            return None
+            
         full = f"{t}_{node.method}"
         if full not in self.functions:
             self.engine.report(ErrorCodes.UNDECLARED_FUNCTION, Severity.ERROR, f"Method '{node.method}' not found on '{t}'", node.line, node.col)

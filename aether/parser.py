@@ -1,4 +1,4 @@
-# aether/parser.py
+# src/aether/parser.py
 
 from typing import List, Optional, Dict
 from .tokens import Token, TokenType
@@ -7,10 +7,6 @@ from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 from .errors import AetherError, Diagnostic
 
 class Parser:
-    """
-    Recursive descent parser. Builds an AST from Tokens.
-    Features Error Recovery: on syntax error, reports it and synchronizes to the next newline.
-    """
     def __init__(self, tokens: List[Token], engine: DiagnosticEngine):
         self.tokens = tokens
         self.current = 0
@@ -29,11 +25,10 @@ class Parser:
         return Program(1, 1, stmts)
 
     def _synchronize(self):
-        """Skip tokens until we reach a statement boundary (newline)."""
         while not self._is_at_end():
             if self._previous().type == TokenType.NEWLINE:
                 return
-            if self._peek().type in [TokenType.NAMESPACE, TokenType.CLASS, TokenType.DEF, TokenType.IF, TokenType.FOR, TokenType.WHILE, TokenType.LOCAL]:
+            if self._peek().type in [TokenType.NAMESPACE, TokenType.CLASS, TokenType.DEF, TokenType.IF, TokenType.FOR, TokenType.WHILE, TokenType.LOCAL, TokenType.EXECUTE]:
                 return
             self._advance()
 
@@ -138,8 +133,21 @@ class Parser:
         if self._match(TokenType.IF): return self._if_stmt()
         if self._match(TokenType.FOR): return self._for_stmt()
         if self._match(TokenType.WHILE): return self._while_stmt()
+        if self._match(TokenType.EXECUTE): return self._execute_stmt()
         if self._match(TokenType.RETURN): return self._return_stmt()
         return self._expr_stmt()
+
+    def _execute_stmt(self):
+        tok = self._previous()
+        chain = []
+        while not self._check(TokenType.COLON):
+            sub_cmd = self._expect(TokenType.IDENT, "Expected execute sub-command (as, at, if, etc.)").value
+            sel = self._expression()
+            chain.append((sub_cmd, sel))
+        self._expect(TokenType.COLON, "Expected ':' after execute chain")
+        self._expect(TokenType.NEWLINE, "Expected newline")
+        body = self._block()
+        return ExecuteStmt(tok.line, tok.col, chain, body)
 
     def _var_decl(self, decorator=None) -> VariableDecl:
         tok = self._previous()
@@ -275,6 +283,18 @@ class Parser:
                     if not self._match(TokenType.COMMA): break
             self._expect(TokenType.RBRACKET, "Expected ']'")
             return Literal(tok.line, tok.col, elements, "array")
+        if self._match(TokenType.LBRACE):
+            elements = {}
+            if not self._check(TokenType.RBRACE):
+                while True:
+                    key = self._expect(TokenType.STRING, "Expected string key in dict").value
+                    self._expect(TokenType.COLON, "Expected ':' after dict key")
+                    val = self._expression()
+                    elements[key] = val
+                    if not self._match(TokenType.COMMA): break
+            self._expect(TokenType.RBRACE, "Expected '}'")
+            return DictLiteral(tok.line, tok.col, elements)
+            
         if self._match(TokenType.IDENT):
             ident_tok = self._previous()
             if self._match(TokenType.LPAREN):

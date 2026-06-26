@@ -1,13 +1,9 @@
-# aether/datapack_builder.py
+# src/aether/datapack_builder.py
 
 import os, json, re, shutil
 from typing import Dict, List, Optional
 
 class DatapackBuilder:
-    """
-    Writes the Intermediate Representation (IR) to disk as a valid 
-    Minecraft Java Edition 1.21.11 datapack.
-    """
     PACK_FORMAT = [94, 1]
     PACK_DESC = "Compiled from Aether v2.0"
     NS_RE = re.compile(r"^[a-z0-9_\-\.]+$")

@@ -1,4 +1,4 @@
-# aether/ast_nodes.py
+# src/aether/ast_nodes.py
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -77,6 +77,11 @@ class WhileStmt(ASTNode):
     condition: ASTNode; body: Block
 
 @dataclass
+class ExecuteStmt(ASTNode):
+    chain: List[tuple]  # List of (sub_command, selector_node)
+    body: Block
+
+@dataclass
 class ReturnStmt(ASTNode):
     value: Optional[ASTNode]
 
@@ -91,6 +96,10 @@ class Literal(ASTNode):
 @dataclass
 class TupleLiteral(ASTNode):
     elements: List[ASTNode]
+
+@dataclass
+class DictLiteral(ASTNode):
+    elements: Dict[str, ASTNode]
 
 @dataclass
 class FormatString(ASTNode):

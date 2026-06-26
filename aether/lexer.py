@@ -1,4 +1,4 @@
-# aether/lexer.py
+# src/aether/lexer.py
 
 from typing import List
 from .tokens import Token, TokenType, KEYWORDS
@@ -6,10 +6,6 @@ from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 from .errors import AetherError, Diagnostic
 
 class Lexer:
-    """
-    Transforms raw Aether source code into a flat list of Tokens.
-    Handles Python-style indentation by generating INDENT and DEDENT tokens.
-    """
     def __init__(self, source: str, engine: DiagnosticEngine):
         self.source = source
         self.engine = engine
@@ -102,6 +98,7 @@ class Lexer:
                                ("+", TokenType.PLUS), ("-", TokenType.MINUS), ("*", TokenType.STAR), ("/", TokenType.SLASH), ("%", TokenType.PERCENT),
                                ("=", TokenType.ASSIGN), ("<", TokenType.LT), (">", TokenType.GT),
                                ("(", TokenType.LPAREN), (")", TokenType.RPAREN), ("[", TokenType.LBRACKET), ("]", TokenType.RBRACKET),
+                               ("{", TokenType.LBRACE), ("}", TokenType.RBRACE),
                                (":", TokenType.COLON), (".", TokenType.DOT), (",", TokenType.COMMA), ("@", TokenType.AT)]:
                     if text.startswith(op):
                         self.tokens.append(Token(tt, op, line_num, col))

@@ -1,9 +1,8 @@
-# aether/type_checker.py
+# src/aether/type_checker.py
 
 from typing import Dict, List, Optional, Any
 from .ast_nodes import *
 from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
-from .symbol_table import SymbolTable
 
 class TypeScope:
     def __init__(self, parent: Optional['TypeScope'] = None):
@@ -15,10 +14,6 @@ class TypeScope:
         return self.parent.lookup(name) if self.parent else None
 
 class TypeChecker(Visitor):
-    """
-    Enforces strict typing and attaches type metadata to AST nodes.
-    Decoupled from SemanticAnalyzer to ensure single-responsibility.
-    """
     def __init__(self, ast: Program, function_table: Dict[str, Dict[str, Any]], classes: Dict[str, Dict[str, str]], engine: DiagnosticEngine):
         self.ast = ast
         self.functions = function_table
@@ -89,6 +84,10 @@ class TypeChecker(Visitor):
         if node.condition.accept(self) != "bool": self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "While condition must be bool.", node.line, node.col)
         node.body.accept(self)
 
+    def visit_ExecuteStmt(self, node: ExecuteStmt) -> None:
+        for sub, sel in node.chain: sel.accept(self)
+        node.body.accept(self)
+
     def visit_ReturnStmt(self, node: ReturnStmt) -> None:
         if self.current_function_return_type is None:
             if node.value: self.engine.report(ErrorCodes.INVALID_RETURN, Severity.ERROR, "Cannot return value from void function.", node.line, node.col)
@@ -110,6 +109,11 @@ class TypeChecker(Visitor):
         for e in node.elements: e.accept(self)
         node.inferred_type = "tuple"
         return "tuple"
+
+    def visit_DictLiteral(self, node: DictLiteral) -> str:
+        for v in node.elements.values(): v.accept(self)
+        node.inferred_type = "nbt"
+        return "nbt"
 
     def visit_FormatString(self, node: FormatString) -> str:
         for p in node.parts:
@@ -158,6 +162,8 @@ class TypeChecker(Visitor):
 
     def visit_MethodCall(self, node: MethodCall) -> Optional[str]:
         obj_type = node.obj.accept(self)
+        if obj_type == "Entity":
+            node.inferred_type = None; return None
         full_name = f"{obj_type}_{node.method}"
         if full_name not in self.functions: self.engine.report(ErrorCodes.UNDECLARED_FUNCTION, Severity.ERROR, f"Method '{node.method}' not found on '{obj_type}'.", node.line, node.col)
         sig = self.functions[full_name]

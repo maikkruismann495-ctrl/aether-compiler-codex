@@ -1,4 +1,4 @@
-# aether/optimizer.py
+# src/aether/optimizer.py
 
 import copy
 import math
@@ -21,9 +21,6 @@ class OptScope:
         return self.parent.lookup_const(name) if self.parent else None
 
 class Optimizer(Visitor):
-    """
-    Performs AST-level optimizations: Constant Folding, Loop Unrolling, Dead Code Elimination.
-    """
     def __init__(self, ast: Program, engine: DiagnosticEngine):
         self.ast = ast
         self.engine = engine
@@ -108,6 +105,11 @@ class Optimizer(Visitor):
         node.body = node.body.accept(self)
         return node
 
+    def visit_ExecuteStmt(self, node: ExecuteStmt) -> ExecuteStmt:
+        node.chain = [(s, sel.accept(self)) for s, sel in node.chain]
+        node.body = node.body.accept(self)
+        return node
+
     def visit_ReturnStmt(self, node: ReturnStmt) -> ReturnStmt:
         if node.value: node.value = node.value.accept(self)
         return node
@@ -119,6 +121,10 @@ class Optimizer(Visitor):
     
     def visit_TupleLiteral(self, node: TupleLiteral) -> TupleLiteral:
         node.elements = [e.accept(self) for e in node.elements]
+        return node
+
+    def visit_DictLiteral(self, node: DictLiteral) -> DictLiteral:
+        for k in node.elements: node.elements[k] = node.elements[k].accept(self)
         return node
 
     def visit_FormatString(self, node: FormatString) -> ASTNode:

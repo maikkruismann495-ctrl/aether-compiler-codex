@@ -1,4 +1,4 @@
-# aether/cli.py
+# src/aether/cli.py
 
 import argparse, os, sys, re, glob, time
 from typing import Dict, List
@@ -49,11 +49,9 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
             
         ns = extract_namespace(src)
         
-        # Initialize the Diagnostics Engine
         filename = os.path.basename(sp if os.path.isfile(sp) else os.path.join(sp, "main.ae"))
         engine = DiagnosticEngine(filename, src)
         
-        # Pipeline
         lexer = Lexer(src, engine)
         tokens = lexer.tokenize()
         if engine.has_errors: engine.print_diagnostics(); return False
@@ -81,7 +79,6 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
         ir_opt = IROptimizer(ir)
         ir = ir_opt.optimize()
         
-        # Print any warnings generated during compilation
         if engine.diagnostics:
             engine.print_diagnostics()
             
@@ -90,7 +87,6 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
         return True
         
     except AetherError as e:
-        # This catches hard crashes that bypass the engine (should be rare now)
         print(e.diag.format(), file=sys.stderr)
         return False
     except Exception as e:
