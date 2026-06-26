@@ -24,7 +24,6 @@ def preprocess_imports(file_path: str, seen: set) -> str:
         if os.path.isfile(p):
             return preprocess_imports(p, seen)
         print(f"[Error] Import not found: {p}", file=sys.stderr); sys.exit(1)
-    # Aether v3.0 uses `use` for imports to match Rust syntax
     return re.sub(r'^\s*use\s+"([^"]+\.ae)"\s*;', rep, content, flags=re.MULTILINE)
 
 def extract_namespace(src: str) -> str:

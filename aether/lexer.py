@@ -16,30 +16,22 @@ class Lexer:
     def tokenize(self) -> List[Token]:
         while not self._is_at_end():
             char = self._peek()
-            
-            # Skip whitespace
             if char in ' \t\r\n':
                 if char == '\n': self.line += 1; self.col = 1
                 else: self.col += 1
                 self.pos += 1
                 continue
-                
-            # Skip comments
             if char == '/' and self._peek(1) == '/':
                 while not self._is_at_end() and self._peek() != '\n':
                     self.pos += 1; self.col += 1
                 continue
-                
-            # Raw Command (starts with '/')
             if char == '/' and not self._peek(1).isspace():
                 self._read_raw_command()
                 continue
-                
             if char.isdigit(): self._read_number()
             elif char.isalpha() or char == '_': self._read_identifier()
             elif char == '"': self._read_string()
             else: self._read_operator()
-            
         self.tokens.append(Token(TokenType.EOF, "", self.line, self.col))
         return self.tokens
 
@@ -49,8 +41,7 @@ class Lexer:
 
     def _advance(self):
         char = self.source[self.pos]
-        self.pos += 1
-        self.col += 1
+        self.pos += 1; self.col += 1
         return char
 
     def _is_at_end(self):
@@ -58,13 +49,9 @@ class Lexer:
 
     def _read_raw_command(self):
         start_line, start_col = self.line, self.col
-        cmd_str = ""
-        # Consume the leading '/'
-        cmd_str += self._advance()
-        
+        cmd_str = self._advance() # Consume '/'
         while not self._is_at_end() and self._peek() != '\n':
             cmd_str += self._advance()
-            
         self.tokens.append(Token(TokenType.RAW_CMD, cmd_str, start_line, start_col))
 
     def _read_number(self):
@@ -103,7 +90,6 @@ class Lexer:
     def _read_operator(self):
         start_col = self.col
         char = self._advance()
-        
         two_char = char + self._peek()
         if two_char in ["==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "->", ".."]:
             self._advance()
@@ -112,7 +98,6 @@ class Lexer:
                       "%=": TokenType.PERCENTEQ, "->": TokenType.ARROW, "..": TokenType.DOTDOT}
             self.tokens.append(Token(tt_map[two_char], two_char, self.line, start_col))
             return
-            
         single_map = {
             "+": TokenType.PLUS, "-": TokenType.MINUS, "*": TokenType.STAR, "/": TokenType.SLASH, "%": TokenType.PERCENT,
             "=": TokenType.ASSIGN, "<": TokenType.LT, ">": TokenType.GT,

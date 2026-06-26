@@ -24,7 +24,7 @@ class Parser:
     def _synchronize(self):
         while not self._is_at_end():
             if self._previous().type == TokenType.SEMICOLON: return
-            if self._peek().type in [TokenType.NAMESPACE, TokenType.FN, TokenType.LET, TokenType.IF, TokenType.FOR, TokenType.RETURN, TokenType.RAW_CMD]: return
+            if self._peek().type in [TokenType.NAMESPACE, TokenType.FN, TokenType.LET, TokenType.IF, TokenType.FOR, TokenType.RETURN, TokenType.RAW_CMD, TokenType.EXECUTE]: return
             self._advance()
 
     def _peek(self, offset=0): 
@@ -50,8 +50,7 @@ class Parser:
             tok = self._previous()
             name = self._expect(TokenType.IDENT, "Expected namespace name").value
             return NamespaceDecl(tok.line, tok.col, name)
-        if self._match(TokenType.FN):
-            return self._function_decl()
+        if self._match(TokenType.FN): return self._function_decl()
         return self._statement()
 
     def _function_decl(self) -> FunctionDecl:
@@ -82,6 +81,7 @@ class Parser:
     def _statement(self):
         if self._match(TokenType.LET): return self._var_decl()
         if self._match(TokenType.IF): return self._if_stmt()
+        if self._match(TokenType.EXECUTE): return self._execute_stmt()
         if self._match(TokenType.FOR): return self._for_stmt()
         if self._match(TokenType.RETURN): return self._return_stmt()
         if self._match(TokenType.RAW_CMD):
@@ -101,12 +101,40 @@ class Parser:
 
     def _if_stmt(self):
         tok = self._previous()
+        
+        # BOLT-STYLE RAW CONDITION (e.g., if score @s obj matches 10)
+        if self._check(TokenType.IDENT) and self._peek().value in ["score", "entity", "block", "data", "predicate"]:
+            cond_str = ""
+            while not self._check(TokenType.LBRACE) and not self._is_at_end():
+                t = self._advance()
+                cond_str += f'"{t.value}" ' if t.type == TokenType.STRING else f"{t.value} "
+            cond_str = cond_str.strip()
+            
+            then_block = self._block()
+            else_stmt = None
+            if self._match(TokenType.ELSE):
+                if self._match(TokenType.IF): else_stmt = Block(tok.line, tok.col, [self._if_stmt()])
+                else: else_stmt = self._block()
+            return IfStmt(tok.line, tok.col, None, cond_str, then_block, else_stmt)
+        
+        # AETHER NATIVE EXPRESSION (e.g., if hp > 10)
         cond = self._expression()
         then_block = self._block()
         else_stmt = None
         if self._match(TokenType.ELSE):
-            else_stmt = self._block()
-        return IfStmt(tok.line, tok.col, cond, then_block, else_stmt)
+            if self._match(TokenType.IF): else_stmt = Block(tok.line, tok.col, [self._if_stmt()])
+            else: else_stmt = self._block()
+        return IfStmt(tok.line, tok.col, cond, None, then_block, else_stmt)
+
+    def _execute_stmt(self):
+        tok = self._previous()
+        chain_str = ""
+        while not self._check(TokenType.LBRACE) and not self._is_at_end():
+            t = self._advance()
+            chain_str += f'"{t.value}" ' if t.type == TokenType.STRING else f"{t.value} "
+        chain_str = chain_str.strip()
+        body = self._block()
+        return ExecuteStmt(tok.line, tok.col, chain_str, body)
 
     def _for_stmt(self):
         tok = self._previous()
@@ -197,7 +225,6 @@ class Parser:
                     if not self._match(TokenType.COMMA): break
             self._expect(TokenType.RBRACKET, "Expected ']'")
             return ArrayLiteral(tok.line, tok.col, elements)
-            
         if self._match(TokenType.IDENT):
             ident_tok = self._previous()
             if self._match(TokenType.LPAREN):

@@ -72,12 +72,17 @@ class Optimizer(Visitor):
         return node
 
     def visit_IfStmt(self, node: IfStmt) -> Optional[ASTNode]:
-        node.condition = node.condition.accept(self)
-        if isinstance(node.condition, Literal) and node.condition.lit_type == "bool":
-            if node.condition.value is True: return node.then_block.accept(self)
-            elif node.condition.value is False: return node.else_stmt.accept(self) if node.else_stmt else None
+        if node.condition is not None:
+            node.condition = node.condition.accept(self)
+            if isinstance(node.condition, Literal) and node.condition.lit_type == "bool":
+                if node.condition.value is True: return node.then_block.accept(self)
+                elif node.condition.value is False: return node.else_stmt.accept(self) if node.else_stmt else None
         node.then_block = node.then_block.accept(self)
         if node.else_stmt: node.else_stmt = node.else_stmt.accept(self)
+        return node
+
+    def visit_ExecuteStmt(self, node: ExecuteStmt) -> ExecuteStmt:
+        node.body = node.body.accept(self)
         return node
 
     def visit_ForStmt(self, node: ForStmt) -> ASTNode:

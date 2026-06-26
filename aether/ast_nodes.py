@@ -57,7 +57,15 @@ class CompoundAssign(ASTNode):
 
 @dataclass
 class IfStmt(ASTNode):
-    condition: ASTNode; then_block: Block; else_stmt: Optional[Block]
+    condition: Optional[ASTNode]       # Aether native bool expression
+    raw_condition: Optional[str]       # Bolt-style raw string (e.g., "score @s obj matches 10")
+    then_block: Block
+    else_stmt: Optional[Block]
+
+@dataclass
+class ExecuteStmt(ASTNode):
+    chain: str                         # Raw string of execute subcommands (e.g., "as @e at @s")
+    body: Block
 
 @dataclass
 class ForStmt(ASTNode):

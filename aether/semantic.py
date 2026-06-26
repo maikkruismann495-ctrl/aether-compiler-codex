@@ -62,10 +62,14 @@ class SemanticAnalyzer(Visitor):
         node.target.accept(self); node.value.accept(self)
 
     def visit_IfStmt(self, node):
-        if node.condition.accept(self) != "bool":
-            self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "If condition must be bool", node.line, node.col)
+        if node.condition is not None:
+            if node.condition.accept(self) != "bool":
+                self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "If condition must be bool", node.line, node.col)
         node.then_block.accept(self)
         if node.else_stmt: node.else_stmt.accept(self)
+
+    def visit_ExecuteStmt(self, node):
+        node.body.accept(self)
 
     def visit_ForStmt(self, node):
         if node.start.accept(self) != "int" or node.end.accept(self) != "int":

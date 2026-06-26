@@ -117,22 +117,47 @@ class CodeGenerator(Visitor):
             self.cmds.append(f"data modify storage {self.current_ns}:data {path} set from storage {self.current_ns}:data {l}")
 
     def visit_IfStmt(self, node):
-        t, l = node.condition.accept(self)
         ifn = f"branch_if_{self.temp_c}"; self.temp_c += 1
         fif = f"{self.current_ns}:{ifn}"
         p = self.cmds; self.cmds = []
         node.then_block.accept(self)
         self.ir[fif] = self.cmds
         self.cmds = p
-        self.cmds.append(f"execute if score {l} ae_int matches 1 run function {fif}")
-        if node.else_stmt:
-            efn = f"branch_else_{self.temp_c}"; self.temp_c += 1
-            fel = f"{self.current_ns}:{efn}"
-            p = self.cmds; self.cmds = []
-            node.else_stmt.accept(self)
-            self.ir[fel] = self.cmds
-            self.cmds = p
-            self.cmds.append(f"execute if score {l} ae_int matches 0 run function {fel}")
+        
+        # Bolt-style raw condition (e.g., "score @s obj matches 10")
+        if node.raw_condition:
+            self.cmds.append(f"execute if {node.raw_condition} run function {fif}")
+            if node.else_stmt:
+                efn = f"branch_else_{self.temp_c}"; self.temp_c += 1
+                fel = f"{self.current_ns}:{efn}"
+                p = self.cmds; self.cmds = []
+                node.else_stmt.accept(self)
+                self.ir[fel] = self.cmds
+                self.cmds = p
+                self.cmds.append(f"execute unless {node.raw_condition} run function {fel}")
+        # Aether native bool expression
+        else:
+            t, l = node.condition.accept(self)
+            self.cmds.append(f"execute if score {l} ae_int matches 1 run function {fif}")
+            if node.else_stmt:
+                efn = f"branch_else_{self.temp_c}"; self.temp_c += 1
+                fel = f"{self.current_ns}:{efn}"
+                p = self.cmds; self.cmds = []
+                node.else_stmt.accept(self)
+                self.ir[fel] = self.cmds
+                self.cmds = p
+                self.cmds.append(f"execute if score {l} ae_int matches 0 run function {fel}")
+
+    def visit_ExecuteStmt(self, node: ExecuteStmt):
+        efn = f"branch_exec_{self.temp_c}"; self.temp_c += 1
+        fex = f"{self.current_ns}:{efn}"
+        
+        p = self.cmds; self.cmds = []
+        node.body.accept(self)
+        self.ir[fex] = self.cmds
+        self.cmds = p
+        
+        self.cmds.append(f"execute {node.chain} run function {fex}")
 
     def visit_ForStmt(self, node):
         s = node.start; e = node.end
@@ -234,7 +259,6 @@ class CodeGenerator(Visitor):
         return (v["type"], v["loc"])
 
     def visit_IndexAccess(self, node: IndexAccess):
-        # MVP: Only literal indices allowed
         if not isinstance(node.index, Literal):
             self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, "Array indices must be literal integers for MVP.", node.line, node.col)
             return ("int", "unknown")
