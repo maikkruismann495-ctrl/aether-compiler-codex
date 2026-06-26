@@ -1,4 +1,5 @@
 # aether/cli.py
+
 import argparse, os, sys, re, glob, time
 from typing import Dict, List
 from .lexer import Lexer
@@ -9,6 +10,7 @@ from .optimizer import Optimizer
 from .codegen import CodeGenerator
 from .optimizer_ir import IROptimizer
 from .datapack_builder import DatapackBuilder
+from .diagnostics import DiagnosticEngine
 from .errors import AetherError
 
 def preprocess_imports(file_path: str, seen: set) -> str:
@@ -18,13 +20,11 @@ def preprocess_imports(file_path: str, seen: set) -> str:
         with open(file_path, "r", encoding="utf-8") as f: content = f.read()
     except IOError as e:
         print(f"[IOError] {e}", file=sys.stderr); sys.exit(1)
-    
     def rep(m):
         p = os.path.join(os.path.dirname(file_path), m.group(1))
         if os.path.isfile(p):
             return preprocess_imports(p, seen)
         print(f"[Error] Import not found: {p}", file=sys.stderr); sys.exit(1)
-        
     return re.sub(r'^\s*import\s+"([^"]+\.ae)"\s*', rep, content, flags=re.MULTILINE)
 
 def extract_namespace(src: str) -> str:
@@ -49,29 +49,49 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
             
         ns = extract_namespace(src)
         
-        lexer = Lexer(src)
+        # Initialize the Diagnostics Engine
+        filename = os.path.basename(sp if os.path.isfile(sp) else os.path.join(sp, "main.ae"))
+        engine = DiagnosticEngine(filename, src)
+        
+        # Pipeline
+        lexer = Lexer(src, engine)
         tokens = lexer.tokenize()
-        parser = Parser(tokens)
+        if engine.has_errors: engine.print_diagnostics(); return False
+        
+        parser = Parser(tokens, engine)
         ast = parser.parse()
-        sem = SemanticAnalyzer(ast)
+        if engine.has_errors: engine.print_diagnostics(); return False
+        
+        sem = SemanticAnalyzer(ast, engine)
         ast = sem.analyze()
-        tc = TypeChecker(ast, sem.functions, sem.classes)
+        if engine.has_errors: engine.print_diagnostics(); return False
+        
+        tc = TypeChecker(ast, sem.functions, sem.classes, engine)
         ast = tc.check()
-        opt = Optimizer(ast)
+        if engine.has_errors: engine.print_diagnostics(); return False
+        
+        opt = Optimizer(ast, engine)
         ast = opt.optimize()
-        cg = CodeGenerator(ast, root_ns=ns)
+        if engine.has_errors: engine.print_diagnostics(); return False
+        
+        cg = CodeGenerator(ast, engine, root_ns=ns)
         ir = cg.generate()
+        if engine.has_errors: engine.print_diagnostics(); return False
+        
         ir_opt = IROptimizer(ir)
         ir = ir_opt.optimize()
         
+        # Print any warnings generated during compilation
+        if engine.diagnostics:
+            engine.print_diagnostics()
+            
         builder = DatapackBuilder(ir, out, ns, mdd)
         builder.build()
         return True
         
     except AetherError as e:
-        print(f"\n[Compilation Failed]", file=sys.stderr)
-        print(f"  --> L{getattr(e,'line','?')}:C{getattr(e,'col','?')}", file=sys.stderr)
-        print(f"   | {e}", file=sys.stderr)
+        # This catches hard crashes that bypass the engine (should be rare now)
+        print(e.diag.format(), file=sys.stderr)
         return False
     except Exception as e:
         import traceback
@@ -80,7 +100,7 @@ def run_compilation(sp: str, out: str, mdd: str) -> bool:
         return False
 
 def main() -> int:
-    p = argparse.ArgumentParser(prog="aether", description="Aether Compiler for MC 1.21.11")
+    p = argparse.ArgumentParser(prog="aether", description="Aether Compiler v2.0 for MC 1.21.11")
     p.add_argument("source", help="Path to main.ae file or project directory")
     p.add_argument("-o", "--output", default=None, help="Output directory for datapack")
     p.add_argument("-w", "--watch", action="store_true", help="Watch for changes and recompile automatically")
@@ -129,3 +149,6 @@ def main() -> int:
             print(f"[✓] Success! Datapack generated at: {out}")
             return 0
         return 1
+
+if __name__ == "__main__":
+    sys.exit(main())

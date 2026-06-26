@@ -1,13 +1,19 @@
-# src/aether/codegen.py
+# aether/codegen.py
 
 import re
 from typing import Dict, List, Optional, Tuple, Any
 from .ast_nodes import *
-from .errors import CodegenError
+from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 
 class CodeGenerator(Visitor):
-    def __init__(self, ast: Program, root_ns: str = "aether"):
+    """
+    Translates the optimized AST into Minecraft command strings (IR).
+    Maps int/bool -> scoreboards, string/objects -> NBT storage.
+    Generates 1.21 macros for dynamic commands.
+    """
+    def __init__(self, ast: Program, engine: DiagnosticEngine, root_ns: str = "aether"):
         self.ast = ast
+        self.engine = engine
         self.ir: Dict[str, List[str]] = {}
         self.current_ns = root_ns
         self.cmds: List[str] = []
@@ -19,7 +25,6 @@ class CodeGenerator(Visitor):
 
     def generate(self):
         self.ir[f"{self.current_ns}:load"] = ["scoreboard objectives add ae_int dummy"]
-        
         load_tags = []
         tick_tags = []
         for s in self.ast.statements:
@@ -51,14 +56,17 @@ class CodeGenerator(Visitor):
     def _get_path(self, node):
         if isinstance(node, Identifier):
             v = self._lookup(node.name)
-            if not v: raise CodegenError(f"Undeclared '{node.name}'", node.line, node.col)
+            if not v:
+                self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared '{node.name}'", node.line, node.col)
+                return "unknown"
             return v["loc"]
         if isinstance(node, MemberAccess):
             base = "self" if isinstance(node.obj, Identifier) and node.obj.name == "self" else self._get_path(node.obj)
             if isinstance(node.obj, Identifier) and node.obj.name == "self" and self.class_context:
                 return f"instances.{self.class_context}_$(obj_id).{node.member}"
             return f"{base}.{node.member}"
-        raise CodegenError("Invalid target", node.line, node.col)
+        self.engine.report(ErrorCodes.INVALID_OPERATION, Severity.ERROR, "Invalid target", node.line, node.col)
+        return "unknown"
 
     def _get_obj(self, node):
         if isinstance(node, Identifier):
@@ -108,7 +116,6 @@ class CodeGenerator(Visitor):
 
     def visit_VariableDecl(self, node):
         obj_name = node.decorator if node.decorator else "ae_int"
-        
         if isinstance(node.value, Literal):
             loc = self._alloc_var(node.name, node.var_type.name, obj_name)
             if node.var_type.name in ["int", "bool"]:
@@ -128,7 +135,6 @@ class CodeGenerator(Visitor):
     def visit_Assignment(self, node):
         path = self._get_path(node.target)
         obj = self._get_obj(node.target)
-        
         if isinstance(node.value, Literal):
             t = node.target.inferred_type if hasattr(node.target, 'inferred_type') else "int"
             if t in ["int", "bool"]:
@@ -174,7 +180,7 @@ class CodeGenerator(Visitor):
                 self.cmds.append(f"scoreboard players set {loc} ae_int {i}")
                 node.body.accept(self)
                 self.scopes.pop()
-        else: raise CodegenError("For loop bounds must be compile-time constants", node.line, node.col)
+        else: self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, "For loop bounds must be compile-time constants", node.line, node.col)
 
     def visit_WhileStmt(self, node):
         wf = f"loop_{self.temp_c}"; bf = f"loop_body_{self.temp_c}"; self.temp_c += 1
@@ -228,14 +234,16 @@ class CodeGenerator(Visitor):
         for p in node.parts:
             if isinstance(p, str): s += p
             elif isinstance(p, Literal): s += str(p.value)
-            else: raise CodegenError("Complex format strings not supported in MVP", node.line, node.col)
+            else: self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, "Complex format strings not supported in MVP", node.line, node.col)
         l = self._alloc_temp("string"); safe = s.replace('"', '\\"')
         self.cmds.append(f'data modify storage {self.current_ns}:data {l} set value "{safe}"')
         return ("string", l)
 
     def visit_Identifier(self, node):
         v = self._lookup(node.name)
-        if not v: raise CodegenError(f"Undeclared '{node.name}'", node.line, node.col)
+        if not v:
+            self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared '{node.name}'", node.line, node.col)
+            return ("unknown", "unknown")
         return (v["type"], v["loc"])
 
     def visit_BinaryOp(self, node):
@@ -277,11 +285,11 @@ class CodeGenerator(Visitor):
                 if n.lit_type == "bool": return "true" if n.value else "false"
                 return str(n.value)
             if isinstance(n, TupleLiteral): return " ".join(lit_to_str(e) for e in n.elements)
-            raise CodegenError(f"Command '{name}' requires literal arguments for MVP.", n.line, n.col)
+            self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, f"Command '{name}' requires literal arguments for MVP.", n.line, n.col)
+            return ""
             
         if name == "say":
             arg = node.args[0]
-            # FULLY DYNAMIC tellraw JSON GENERATION
             if isinstance(arg, FormatString):
                 json_parts = []
                 for p in arg.parts:
@@ -292,7 +300,9 @@ class CodeGenerator(Visitor):
                         else: json_parts.append('{"text":"' + str(p.value) + '"}')
                     elif isinstance(p, Identifier):
                         v = self._lookup(p.name)
-                        if not v: raise CodegenError(f"Undeclared variable '{p.name}'", p.line, p.col)
+                        if not v:
+                            self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared variable '{p.name}'", p.line, p.col)
+                            continue
                         if v["type"] in ["int", "bool"]:
                             json_parts.append('{"score":{"name":"' + v['loc'] + '","objective":"' + v['objective'] + '"}}')
                         else:
@@ -302,7 +312,6 @@ class CodeGenerator(Visitor):
                 return None
                 
             elif isinstance(arg, Literal) and arg.lit_type == "string":
-                # Also handle dynamic variables in plain strings like say("Hello {name}")
                 matches = re.findall(r'\{([a-zA-Z0-9_]+)\}', arg.value)
                 if matches:
                     parts = re.split(r'\{[a-zA-Z0-9_]+\}', arg.value)
@@ -312,7 +321,9 @@ class CodeGenerator(Visitor):
                         if i < len(matches):
                             var_name = matches[i]
                             v = self._lookup(var_name)
-                            if not v: raise CodegenError(f"Undeclared variable '{var_name}'", node.line, node.col)
+                            if not v:
+                                self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared variable '{var_name}'", node.line, node.col)
+                                continue
                             if v["type"] in ["int", "bool"]:
                                 json_parts.append('{"score":{"name":"' + v['loc'] + '","objective":"' + v['objective'] + '"}}')
                             else:
@@ -392,44 +403,36 @@ class CodeGenerator(Visitor):
         if name == "run":
             cmd_str_node = node.args[0]
             if not isinstance(cmd_str_node, Literal) or cmd_str_node.lit_type != "string":
-                raise CodegenError("run() expects a string literal.", node.line, node.col)
-                
+                self.engine.report(ErrorCodes.TYPE_MISMATCH, Severity.ERROR, "run() expects a string literal.", node.line, node.col)
+                return None
             cmd_str = cmd_str_node.value
             matches = re.findall(r'\{([a-zA-Z0-9_]+)\}', cmd_str)
-            
             if not matches:
                 self.cmds.append(cmd_str)
                 return None
-                
             macro_id = self.mac_c
             self.mac_c += 1
             macro_name = f"macro_run_{macro_id}"
             full_macro_name = f"{self.current_ns}:{macro_name}"
-            
             macro_data_str = []
-            
             for var_name in matches:
                 v = self._lookup(var_name)
-                if not v: raise CodegenError(f"Undeclared variable '{var_name}' in run() string.", node.line, node.col)
-                
+                if not v:
+                    self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared variable '{var_name}' in run() string.", node.line, node.col)
+                    continue
                 if v["type"] in ["int", "bool"]:
                     self.cmds.append(f"execute store storage {self.current_ns}:data macro_{var_name} int 1 run scoreboard players get {v['loc']} {v['objective']}")
                 else:
                     self.cmds.append(f"data modify storage {self.current_ns}:data macro_{var_name} set from storage {self.current_ns}:data {v['loc']}")
-                    
                 macro_data_str.append(f"macro_{var_name}")
-                
             args_str = ",".join(macro_data_str)
             self.cmds.append(f"function {full_macro_name} with storage {self.current_ns}:data {{{args_str}}}")
-            
             old_cmds = self.cmds
             self.cmds = []
-            
             macro_cmd = cmd_str
             for var_name in matches:
                 macro_cmd = macro_cmd.replace('{' + var_name + '}', '$(' + var_name + ')')
             macro_cmd = '$' + macro_cmd
-            
             self.cmds.append(macro_cmd)
             self.ir[full_macro_name] = self.cmds
             self.cmds = old_cmds
@@ -440,20 +443,17 @@ class CodeGenerator(Visitor):
             obj = self._get_obj(node.args[i])
             if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} {obj}")
             else: self.cmds.append(f"data modify storage {self.current_ns}:data arg{i} set from storage {self.current_ns}:data {l}")
-        
         self.cmds.append(f"function {self.current_ns}:{node.name}")
         return None
 
     def visit_MethodCall(self, node):
         obj_path = self._get_path(node.obj)
         obj_type = node.obj.inferred_type if hasattr(node.obj, 'inferred_type') else "Entity"
-        
         self.cmds.append(f'data modify storage {self.current_ns}:data macro_obj_path set value "{obj_path}"')
         args = [a.accept(self) for a in node.args]
         for i, (t, l) in enumerate(args):
             obj = self._get_obj(node.args[i])
             if t in ["int", "bool"]: self.cmds.append(f"scoreboard players operation arg_{i} ae_int = {l} {obj}")
             else: self.cmds.append(f"data modify storage {self.current_ns}:data arg{i} set from storage {self.current_ns}:data {l}")
-            
         self.cmds.append(f"function {self.current_ns}:{obj_type}_{node.method} with storage {self.current_ns}:data {{macro_obj_path:'{obj_path}'}}")
         return None

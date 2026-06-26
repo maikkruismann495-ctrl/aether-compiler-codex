@@ -1,21 +1,41 @@
-# src/aether/parser.py
+# aether/parser.py
 
 from typing import List, Optional, Dict
 from .tokens import Token, TokenType
 from .ast_nodes import *
-from .errors import ParseError
+from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
+from .errors import AetherError, Diagnostic
 
 class Parser:
-    def __init__(self, tokens: List[Token]):
+    """
+    Recursive descent parser. Builds an AST from Tokens.
+    Features Error Recovery: on syntax error, reports it and synchronizes to the next newline.
+    """
+    def __init__(self, tokens: List[Token], engine: DiagnosticEngine):
         self.tokens = tokens
         self.current = 0
+        self.engine = engine
+        self.struct_names = set()
 
     def parse(self) -> Program:
         stmts = []
         while not self._is_at_end():
-            stmts.append(self._declaration())
-            self._consume_newlines()
+            try:
+                stmts.append(self._declaration())
+                self._consume_newlines()
+            except AetherError as e:
+                self.engine.diagnostics.append(e.diag)
+                self._synchronize()
         return Program(1, 1, stmts)
+
+    def _synchronize(self):
+        """Skip tokens until we reach a statement boundary (newline)."""
+        while not self._is_at_end():
+            if self._previous().type == TokenType.NEWLINE:
+                return
+            if self._peek().type in [TokenType.NAMESPACE, TokenType.CLASS, TokenType.DEF, TokenType.IF, TokenType.FOR, TokenType.WHILE, TokenType.LOCAL]:
+                return
+            self._advance()
 
     def _peek(self, offset=0): 
         i = self.current + offset
@@ -30,9 +50,12 @@ class Parser:
         for t in types:
             if self._check(t): self._advance(); return True
         return False
-    def _expect(self, t, msg):
+    def _expect(self, t: TokenType, msg: str) -> Token:
         if self._check(t): return self._advance()
-        raise ParseError(f"{msg} (Got {self._peek().type.name})", self._peek().line, self._peek().col)
+        tok = self._peek()
+        hint = None
+        if t == TokenType.COLON: hint = "Did you forget a ':' at the end of the statement?"
+        raise AetherError(Diagnostic(ErrorCodes.EXPECTED_TOKEN, Severity.ERROR, f"{msg} (Got {tok.type.name})", tok.line, tok.col, self.engine.filename, self.engine.source, hint))
     def _consume_newlines(self):
         while self._match(TokenType.NEWLINE): pass
 
@@ -54,10 +77,8 @@ class Parser:
         self._expect(TokenType.COLON, "Expected ':' after class name")
         self._expect(TokenType.NEWLINE, "Expected newline")
         self._expect(TokenType.INDENT, "Expected indented block")
-        
         fields: Dict[str, str] = {}
         methods: List[FunctionDecl] = []
-        
         while not self._check(TokenType.DEDENT) and not self._is_at_end():
             self._consume_newlines()
             if self._match(TokenType.DEF):
@@ -69,7 +90,6 @@ class Parser:
                 fields[fname] = ftype
                 self._match(TokenType.NEWLINE)
             self._consume_newlines()
-            
         self._expect(TokenType.DEDENT, "Expected dedent to close class")
         return ClassDecl(tok.line, tok.col, name, fields, methods)
 
@@ -105,18 +125,15 @@ class Parser:
 
     def _statement(self):
         decorator = None
-        
-        # Check for @objective("name")
         if self._match(TokenType.AT):
             dec_tok = self._previous()
             dec_name = self._expect(TokenType.IDENT, "Expected decorator name").value
             if dec_name != "objective":
-                raise ParseError(f"Unknown decorator '@{dec_name}'", dec_tok.line, dec_tok.col)
+                raise AetherError(Diagnostic(ErrorCodes.UNEXPECTED_TOKEN, Severity.ERROR, f"Unknown decorator '@{dec_name}'", dec_tok.line, dec_tok.col, self.engine.filename, self.engine.source))
             self._expect(TokenType.LPAREN, "Expected '(' after @objective")
             obj_tok = self._expect(TokenType.STRING, "Expected objective name string")
             self._expect(TokenType.RPAREN, "Expected ')'")
             decorator = obj_tok.value
-            
         if self._match(TokenType.LOCAL): return self._var_decl(decorator)
         if self._match(TokenType.IF): return self._if_stmt()
         if self._match(TokenType.FOR): return self._for_stmt()
@@ -199,7 +216,7 @@ class Parser:
                 self._expect(TokenType.RBRACKET, "Expected ']'")
                 name += "[]"
             return TypeNode(tok.line, tok.col, name)
-        raise ParseError(f"Expected type, got {tok.type.name}", tok.line, tok.col)
+        raise AetherError(Diagnostic(ErrorCodes.EXPECTED_TOKEN, Severity.ERROR, f"Expected type, got {tok.type.name}", tok.line, tok.col, self.engine.filename, self.engine.source))
 
     def _expression(self): return self._logical_or()
     def _logical_or(self):
@@ -258,7 +275,6 @@ class Parser:
                     if not self._match(TokenType.COMMA): break
             self._expect(TokenType.RBRACKET, "Expected ']'")
             return Literal(tok.line, tok.col, elements, "array")
-            
         if self._match(TokenType.IDENT):
             ident_tok = self._previous()
             if self._match(TokenType.LPAREN):
@@ -267,7 +283,7 @@ class Parser:
                 return FunctionCall(ident_tok.line, ident_tok.col, None, ident_tok.value, args, kwargs)
             expr = Identifier(ident_tok.line, ident_tok.col, ident_tok.value)
             return self._postfix(expr)
-        raise ParseError(f"Unexpected token {tok.type.name}", tok.line, tok.col)
+        raise AetherError(Diagnostic(ErrorCodes.UNEXPECTED_TOKEN, Severity.ERROR, f"Unexpected token {tok.type.name}", tok.line, tok.col, self.engine.filename, self.engine.source))
 
     def _parse_format_string(self, tok: Token) -> FormatString:
         raw = tok.value
@@ -278,7 +294,7 @@ class Parser:
             if raw[i] == '{':
                 if i > last: parts.append(raw[last:i])
                 j = raw.find('}', i)
-                if j == -1: raise ParseError("Unterminated format string", tok.line, tok.col)
+                if j == -1: raise AetherError(Diagnostic(ErrorCodes.UNTERMINATED_STRING, Severity.ERROR, "Unterminated format string", tok.line, tok.col, self.engine.filename, self.engine.source))
                 var_name = raw[i+1:j]
                 parts.append(Identifier(tok.line, tok.col + i, var_name))
                 last = j + 1

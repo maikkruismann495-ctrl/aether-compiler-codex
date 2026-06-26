@@ -1,4 +1,4 @@
-# src/aether/tokens.py
+# aether/tokens.py
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ class TokenType(Enum):
     COLON = auto(); DOT = auto(); COMMA = auto(); ARROW = auto()
     # Delimiters
     LPAREN = auto(); RPAREN = auto(); LBRACKET = auto(); RBRACKET = auto()
-    AT = auto() # Added for decorators
+    AT = auto() 
 
 @dataclass
 class Token:

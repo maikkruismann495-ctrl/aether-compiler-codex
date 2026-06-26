@@ -1,30 +1,23 @@
-# src/aether/errors.py
+# aether/errors.py
+
+from .diagnostics import Diagnostic, Severity, ErrorCodes
 
 class AetherError(Exception):
     """Base exception for all Aether compiler errors."""
-    pass
+    def __init__(self, diag: Diagnostic):
+        self.diag = diag
+        super().__init__(diag.format())
 
-class LexError(AetherError):
-    def __init__(self, message: str, line: int, col: int):
-        self.message = message; self.line = line; self.col = col
-        super().__init__(f"[LexError] at L{line}:C{col} -> {message}")
+# Helper functions to create specific errors easily
+def make_error(code, message, line, col, filename, source, hint=None):
+    diag = Diagnostic(code, Severity.ERROR, message, line, col, filename, source, hint)
+    return AetherError(diag)
 
-class ParseError(AetherError):
-    def __init__(self, message: str, line: int, col: int):
-        self.message = message; self.line = line; self.col = col
-        super().__init__(f"[ParseError] at L{line}:C{col} -> {message}")
+def make_syntax_error(message, line, col, filename, source, hint=None):
+    return make_error(ErrorCodes.UNEXPECTED_TOKEN, message, line, col, filename, source, hint)
 
-class SemanticError(AetherError):
-    def __init__(self, message: str, line: int, col: int):
-        self.message = message; self.line = line; self.col = col
-        super().__init__(f"[SemanticError] at L{line}:C{col} -> {message}")
+def make_type_error(message, line, col, filename, source, hint=None):
+    return make_error(ErrorCodes.TYPE_MISMATCH, message, line, col, filename, source, hint)
 
-class TypeError(AetherError):
-    def __init__(self, message: str, line: int, col: int):
-        self.message = message; self.line = line; self.col = col
-        super().__init__(f"[TypeError] at L{line}:C{col} -> {message}")
-
-class CodegenError(AetherError):
-    def __init__(self, message: str, line: int, col: int):
-        self.message = message; self.line = line; self.col = col
-        super().__init__(f"[CodegenError] at L{line}:C{col} -> {message}")
+def make_semantic_error(code, message, line, col, filename, source, hint=None):
+    return make_error(code, message, line, col, filename, source, hint)

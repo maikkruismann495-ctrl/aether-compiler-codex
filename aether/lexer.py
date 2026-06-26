@@ -1,12 +1,18 @@
-# src/aether/lexer.py
+# aether/lexer.py
 
 from typing import List
 from .tokens import Token, TokenType, KEYWORDS
-from .errors import LexError
+from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
+from .errors import AetherError, Diagnostic
 
 class Lexer:
-    def __init__(self, source: str):
+    """
+    Transforms raw Aether source code into a flat list of Tokens.
+    Handles Python-style indentation by generating INDENT and DEDENT tokens.
+    """
+    def __init__(self, source: str, engine: DiagnosticEngine):
         self.source = source
+        self.engine = engine
         self.tokens: List[Token] = []
         self.indent_stack = [0]
 
@@ -66,7 +72,9 @@ class Lexer:
                         text = text[2:]; col += 2
                     else:
                         string_str += text[0]; text = text[1:]; col += 1
-                if not text: raise LexError("Unterminated format string", line_num, col)
+                if not text:
+                    self.engine.report(ErrorCodes.UNTERMINATED_STRING, Severity.ERROR, "Unterminated format string", line_num, col)
+                    raise AetherError(Diagnostic(ErrorCodes.UNTERMINATED_STRING, Severity.ERROR, "Unterminated format string", line_num, col, self.engine.filename, self.engine.source))
                 text = text[1:]; col += 1
                 self.tokens.append(Token(TokenType.FORMAT_STRING, string_str, line_num, col))
             elif char == '"':
@@ -81,7 +89,9 @@ class Lexer:
                         text = text[2:]; col += 2
                     else:
                         string_str += text[0]; text = text[1:]; col += 1
-                if not text: raise LexError("Unterminated string", line_num, col)
+                if not text:
+                    self.engine.report(ErrorCodes.UNTERMINATED_STRING, Severity.ERROR, "Unterminated string", line_num, col)
+                    raise AetherError(Diagnostic(ErrorCodes.UNTERMINATED_STRING, Severity.ERROR, "Unterminated string", line_num, col, self.engine.filename, self.engine.source))
                 text = text[1:]; col += 1
                 self.tokens.append(Token(TokenType.STRING, string_str, line_num, col))
             else:
@@ -97,6 +107,7 @@ class Lexer:
                         self.tokens.append(Token(tt, op, line_num, col))
                         text = text[len(op):]; col += len(op); matched = True; break
                 if not matched:
-                    raise LexError(f"Unexpected character: '{char}'", line_num, col)
+                    self.engine.report(ErrorCodes.UNEXPECTED_CHAR, Severity.ERROR, f"Unexpected character: '{char}'", line_num, col)
+                    raise AetherError(Diagnostic(ErrorCodes.UNEXPECTED_CHAR, Severity.ERROR, f"Unexpected character: '{char}'", line_num, col, self.engine.filename, self.engine.source))
                     
         self.tokens.append(Token(TokenType.NEWLINE, "\\n", line_num, col))

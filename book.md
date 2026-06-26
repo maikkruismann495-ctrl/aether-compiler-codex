@@ -1,4 +1,4 @@
-# 📖 The Aether Programming Language: Official Handbook & Compiler Reference
+# 📖 The Aether Programming Language: Official Handbook & Compiler Reference (v2.0)
 
 Welcome to the official handbook for Aether. This document is the complete, authoritative guide to the Aether programming language and its compiler. Whether you are building a simple Hello World script or a massive multiplayer RPG, this book will teach you how to master Aether.
 
@@ -202,43 +202,43 @@ Aether behaves like a real compiler (Direct Compiler model). The Intermediate Re
 [ .ae Source File ]
        |
        v
-+------------------+
++------------------+  Injects DiagnosticEngine (Tracks all errors/warnings)
 |     Lexer        |  Tokenizes source, handles Python-style INDENT/DEDENT
 +------------------+
        |
        v
-+------------------+
++------------------+  Features Error Recovery: skips to next line on error
 |     Parser       |  Recursive descent. Builds Abstract Syntax Tree (AST)
 +------------------+
        |
        v
-+-------------------+
-| Semantic Analyzer |  Validates scopes, function calls, variable existence
++-------------------+  Uses formal SymbolTable. Checks for shadowing,
+| Semantic Analyzer |  unused vars, and duplicate declarations.
 +-------------------+
        |
        v
-+------------------+
-|  Type Checker    |  Enforces strict typing, attaches type metadata
++------------------+  Validates types and attaches metadata to AST nodes.
+|  Type Checker    |  Reports precise type mismatch errors.
 +------------------+
        |
        v
-+------------------+
-| AST Optimizer    |  Constant folding (5+5 -> 10), unrolls `for` loops, evaluates math::
++------------------+  Constant folding (5+5 -> 10), unrolls `for` loops,
+| AST Optimizer    |  evaluates math:: functions at compile time.
 +------------------+
        |
        v
 +------------------+  Translates AST to command strings (IR).
-| Code Generator   |  Maps int/bool -> scoreboards, string/objects -> NBT storage.
+| Code Generator   |  Maps int/bool -> scoreboards, string/objects -> NBT.
 +------------------+  Generates 1.21 macros for dynamic commands.
        |
        v
-+------------------+
-|  IR Optimizer    |  Dead Code Elimination (DCE). Prunes unused branch functions.
++------------------+  Dead Code Elimination (DCE). Prunes unused branch
+|  IR Optimizer    |  functions and unused scoreboard variables.
 +------------------+
        |
        v
 +------------------+
-| Datapack Builder |  Writes pack.mcmeta, load/tick JSON tags, .mcfunction files
+| Datapack Builder |  Writes pack.mcmeta, load/tick JSON tags, .mcfunction
 +------------------+
 ```
 
@@ -322,18 +322,6 @@ def main():
 
 **Compiler Implementation:**
 When Aether sees `@objective`, it skips allocating the variable on `ae_int`. Instead, it uses the provided objective name for all subsequent `scoreboard players operation` and `scoreboard players set` commands.
-```mcfunction
-# @objective("deathCount") local deaths: int = 0
-scoreboard players set var_deaths_0 deathCount 0
-
-# @objective("currency") local gold: int = 100
-scoreboard players set var_gold_0 currency 100
-
-# if deaths > 0:
-scoreboard players set temp_0 ae_int 0
-execute if score var_deaths_0 deathCount matches 1.. run scoreboard players set temp_0 ae_int 1
-execute if score temp_0 ae_int matches 1 run function my_game:branch_if_0
-```
 
 > **Warning:** Aether assumes the external objective already exists. You must create it via a `run("scoreboard objectives add ...")` command or a manual JSON file in your `data/` folder.
 
@@ -494,23 +482,34 @@ run("kill {target}")
 
 # Part 15 & 16 — Compiler Internals & Optimizations
 
-1. **Lexer:** Tokenizes, handles `INDENT`/`DEDENT`.
-2. **Parser:** Recursive descent. Builds AST.
-3. **Semantic/Type Checker:** Validates scopes and types.
-4. **AST Optimizer:** Constant folding, loop unrolling.
-5. **Code Generator:** Walks AST, emits command strings (IR).
-6. **IR Optimizer:** Dead Code Elimination. If a scoreboard variable is set but never read, the compiler deletes it. Unused generated branch functions are pruned.
-7. **Datapack Builder:** Writes to disk.
+### The Diagnostic Engine (New in v2.0)
+Aether v2.0 introduces a decoupled `DiagnosticEngine`. Instead of throwing exceptions and crashing on the first error, the Lexer, Parser, and Semantic Analyzer log diagnostics. 
+* **Error Recovery:** If the parser encounters a missing `:`, it reports the error, skips tokens until the next newline, and continues parsing the rest of the file.
+* **Symbol Table:** The semantic analyzer uses a formal `SymbolTable` to track scopes. It will now log warnings for unused variables and variables that shadow outer scopes.
+
+### Optimizations
+1. **AST Optimizer:** Constant folding, loop unrolling.
+2. **IR Optimizer:** Dead Code Elimination. If a scoreboard variable is set but never read, the compiler deletes it. Unused generated branch functions are pruned.
 
 ---
 
-# Part 17 — Error Messages
+# Part 17 — Error Messages & Diagnostics
 
-Aether fails fast with precise location tracking.
-* **LexError:** Invalid character.
-* **ParseError:** Missing `:` or incorrect indentation.
-* **SemanticError:** Undeclared variable.
-* **TypeError:** Mismatched types.
+Aether v2.0 features Rust/Clang style error formatting. Errors include line/column, source snippets, underlines, and helpful hints.
+
+```text
+error[E202]: Expected ':' (Got NEWLINE)
+ --> main.ae:4:24
+  |
+4 |     if hp > 0
+  |                        ^ Expected ':' (Got NEWLINE)
+  |
+  = hint: Did you forget a ':' at the end of the statement?
+```
+
+### Warning Codes (300s)
+* **E304 (Unused Variable):** Logged when a variable is declared but never used in its scope.
+* **E305 (Shadowed Variable):** Logged when a variable name hides an outer variable.
 
 ---
 

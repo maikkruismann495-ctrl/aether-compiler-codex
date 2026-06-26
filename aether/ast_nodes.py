@@ -1,4 +1,4 @@
-# src/aether/ast_nodes.py
+# aether/ast_nodes.py
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -54,7 +54,7 @@ class Block(ASTNode):
 @dataclass
 class VariableDecl(ASTNode):
     name: str; var_type: Optional[TypeNode]; value: ASTNode
-    decorator: Optional[str] = None # Added for @objective
+    decorator: Optional[str] = None
 
 @dataclass
 class Assignment(ASTNode):

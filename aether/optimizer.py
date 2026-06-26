@@ -1,10 +1,10 @@
-# src/aether/optimizer.py
+# aether/optimizer.py
 
 import copy
 import math
 from typing import Optional, Any, List, Union
 from .ast_nodes import *
-from .errors import SemanticError
+from .diagnostics import DiagnosticEngine, Severity, ErrorCodes
 
 class OptScope:
     def __init__(self, parent: Optional['OptScope'] = None):
@@ -12,8 +12,7 @@ class OptScope:
         self.consts = {}
         self.assigned = set()
     def declare_const(self, name: str, literal: Literal) -> None:
-        if name not in self.assigned:
-            self.consts[name] = literal
+        if name not in self.assigned: self.consts[name] = literal
     def mark_assigned(self, name: str) -> None:
         self.assigned.add(name)
         if name in self.consts: del self.consts[name]
@@ -22,8 +21,12 @@ class OptScope:
         return self.parent.lookup_const(name) if self.parent else None
 
 class Optimizer(Visitor):
-    def __init__(self, ast: Program):
+    """
+    Performs AST-level optimizations: Constant Folding, Loop Unrolling, Dead Code Elimination.
+    """
+    def __init__(self, ast: Program, engine: DiagnosticEngine):
         self.ast = ast
+        self.engine = engine
         self.global_scope = OptScope()
         self.current_scope = self.global_scope
 
@@ -89,7 +92,8 @@ class Optimizer(Visitor):
     def visit_ForStmt(self, node: ForStmt) -> ASTNode:
         start = node.start.accept(self); end = node.end.accept(self)
         if not isinstance(start, Literal) or not isinstance(end, Literal):
-            raise SemanticError("Compile-time loop bounds must evaluate to constant integers.", node.line, node.col)
+            self.engine.report(ErrorCodes.UNSUPPORTED_FEATURE, Severity.ERROR, "Compile-time loop bounds must evaluate to constant integers.", node.line, node.col)
+            return node
         unrolled = []
         for i in range(start.value, end.value):
             p = self.current_scope; self.current_scope = OptScope(p)
@@ -123,16 +127,11 @@ class Optimizer(Visitor):
             if isinstance(p, str): new_parts.append(p)
             else:
                 opt = p.accept(self)
-                if isinstance(opt, Literal):
-                    new_parts.append(str(opt.value))
-                else:
-                    new_parts.append(opt)
-        
-        # If all parts folded to strings, merge them into a single Literal
+                if isinstance(opt, Literal): new_parts.append(str(opt.value))
+                else: new_parts.append(opt)
         if all(isinstance(p, str) for p in new_parts):
             merged = "".join(new_parts)
             return Literal(node.line, node.col, merged, "string")
-        
         node.parts = new_parts
         return node
 
@@ -189,4 +188,5 @@ class Optimizer(Visitor):
         if lt == "string":
             if op == '==': return self._make_literal(lv == rv, "bool", line, col)
             if op == '!=': return self._make_literal(lv != rv, "bool", line, col)
-        raise SemanticError(f"Cannot fold operator '{op}' for type '{lt}'.", line, col)
+        self.engine.report(ErrorCodes.INVALID_OPERATION, Severity.ERROR, f"Cannot fold operator '{op}' for type '{lt}'.", line, col)
+        return l
