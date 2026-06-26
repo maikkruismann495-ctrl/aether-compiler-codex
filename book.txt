@@ -167,14 +167,15 @@ def main():
 Aether is a strictly-typed, high-level programming language that compiles directly into Minecraft Java Edition 1.21.11 datapacks. It uses Python-like indentation and syntax, supports Object-Oriented Programming (OOP), and abstracts away the tedium of scoreboards, NBT data manipulation, and recursive function loops.
 
 ### Design Philosophy
-1. **Readability over boilerplate:** You write logic, not `execute if score` commands.
-2. **Zero-cost abstractions:** A `for` loop that calculates math compiles down to raw, flat commands, adding zero runtime lag.
-3. **Strictness prevents bugs:** Types are checked at compile time. If you try to subtract a `string` from an `int`, Aether refuses to compile.
+Aether is built on three core pillars:
+1. **Readability over boilerplate:** You write logic, not `execute if score` commands. The syntax is designed to be instantly familiar to Python developers while enforcing strict safety rules.
+2. **Zero-cost abstractions:** A `for` loop that calculates math compiles down to raw, flat commands, adding zero runtime lag. Object-Oriented Programming (OOP) compiles down to macro-driven NBT manipulation.
+3. **Strictness prevents bugs:** Types are checked at compile time. If you try to subtract a `string` from an `int`, Aether refuses to compile. This prevents runtime crashes in Minecraft.
 
 ### Differences from Python, Java, C#, and Minecraft Commands
-* **vs Python:** Aether looks like Python, but it is strictly typed. You cannot change a variable's type at runtime.
-* **vs Java/C#:** No garbage collector, no threads. Execution is bound by Minecraft's single-threaded tick system.
-* **vs Minecraft Commands:** You don't manually manage `data modify storage` or `scoreboard players operation`. Aether handles allocation automatically.
+* **vs Python:** Aether looks like Python, but it is strictly typed. You cannot change a variable's type at runtime, and you cannot use implicit truthiness in `if` statements.
+* **vs Java/C#:** No garbage collector, no threads. Execution is bound by Minecraft's single-threaded tick system (65536 commands per tick limit).
+* **vs Minecraft Commands:** You don't manually manage `data modify storage` or `scoreboard players operation`. Aether handles allocation automatically and safely.
 
 ---
 
@@ -191,18 +192,55 @@ pip install git+https://github.com/torbenn211/aether-compiler.git
 aether <source> [options]
 ```
 * `-o, --output <dir>`: Output directory for the datapack.
-* `-w, --watch`: Watch for changes and recompile instantly.
+* `-w, --watch`: Watch for changes and recompile instantly (like Bolt/Beet).
 * `--debug`: Dumps `ir_debug.json` showing the exact generated commands.
 
 ### Compilation Pipeline
-1. **Lexer:** Tokenizes source code (handles Python indentation).
-2. **Parser:** Builds an Abstract Syntax Tree (AST).
-3. **Semantic Analyzer:** Validates scopes and function calls.
-4. **Type Checker:** Enforces strict typing.
-5. **AST Optimizer:** Folds constants, unrolls `for` loops.
-6. **Code Generator:** Translates AST to command strings (IR).
-7. **IR Optimizer:** Dead Code Elimination (DCE).
-8. **Datapack Builder:** Writes files to disk.
+Aether behaves like a real compiler (Direct Compiler model). The Intermediate Representation (IR) is temporary scaffolding. The final output is optimized, native `.mcfunction` files.
+
+```ascii
+[ .ae Source File ]
+       |
+       v
++------------------+
+|     Lexer        |  Tokenizes source, handles Python-style INDENT/DEDENT
++------------------+
+       |
+       v
++------------------+
+|     Parser       |  Recursive descent. Builds Abstract Syntax Tree (AST)
++------------------+
+       |
+       v
++-------------------+
+| Semantic Analyzer |  Validates scopes, function calls, variable existence
++-------------------+
+       |
+       v
++------------------+
+|  Type Checker    |  Enforces strict typing, attaches type metadata
++------------------+
+       |
+       v
++------------------+
+| AST Optimizer    |  Constant folding (5+5 -> 10), unrolls `for` loops, evaluates math::
++------------------+
+       |
+       v
++------------------+  Translates AST to command strings (IR).
+| Code Generator   |  Maps int/bool -> scoreboards, string/objects -> NBT storage.
++------------------+  Generates 1.21 macros for dynamic commands.
+       |
+       v
++------------------+
+|  IR Optimizer    |  Dead Code Elimination (DCE). Prunes unused branch functions.
++------------------+
+       |
+       v
++------------------+
+| Datapack Builder |  Writes pack.mcmeta, load/tick JSON tags, .mcfunction files
++------------------+
+```
 
 ---
 
@@ -227,15 +265,17 @@ def main():
 
 # Part 4 — Types
 
+Aether is statically typed. Type inference is supported.
+
 ### 1. `int` (Integer)
 * **Purpose:** 32-bit signed integer.
 * **Memory Model:** Stored in the `ae_int` scoreboard objective.
-* **Limitations:** Cannot hold decimals.
+* **Limitations:** Cannot hold decimals. Division truncates towards zero like Java, not down like Python.
 
 ### 2. `string`
 * **Purpose:** UTF-8 text.
 * **Memory Model:** Stored in `storage <namespace>:data` as NBT strings.
-* **Limitations:** Cannot be dynamically concatenated at runtime. Use compile-time interpolation.
+* **Limitations:** Cannot be dynamically concatenated at runtime in MVP. Use compile-time interpolation.
 
 ### 3. `bool`
 * **Purpose:** `true` or `false`.
@@ -254,14 +294,14 @@ name = "Bob"          # Allowed
 ```
 
 ### Scope and Lifetime
-Variables exist only within the `def` block they were created in. When a function ends, its local variables are conceptually discarded.
+Variables exist only within the `def` block they were created in. When a function ends, its local variables are conceptually discarded (their scoreboard/NBT locations will be overwritten by future function calls).
 
 ---
 
 # Part 6 — Expressions
 
 ### Arithmetic Operators
-`+`, `-`, `*`, `/`, `%` (Division truncates towards zero like Java).
+`+`, `-`, `*`, `/`, `%` (Modulo follows Java semantics: result takes sign of dividend).
 
 ### Comparison Operators
 `==`, `!=`, `<`, `>`, `<=`, `>=`
@@ -285,7 +325,7 @@ Variables exist only within the `def` block they were created in. When a functio
 
 ### If / Elif / Else
 Conditions **must** evaluate to `bool`. There is no implicit truthiness.
-**Compiler Translation:** Generates separate `.mcfunction` files for branches and calls them via `execute if score`.
+**Compiler Translation:** Generates separate `.mcfunction` files for branches (`branch_if_0.mcfunction`) and calls them via `execute if score #temp_0 ae_int matches 1 run function...`.
 
 ### Compile-Time Loops (`for`)
 **Compiler Translation:** The optimizer unrolls this completely at compile time into flat commands. Zero runtime overhead.
