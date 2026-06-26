@@ -1,7 +1,7 @@
 # ⚡ Aether Programming Language
 
 <p align="center">
-  <strong>A modern, strictly-typed, Python-inspired programming language that compiles to Minecraft Java Edition 1.21+ Datapacks.</strong>
+  <strong>A modern, strictly-typed, Rust-inspired programming language that compiles to Minecraft Java Edition 1.21+ Datapacks.</strong>
 </p>
 
 <p align="center">
@@ -10,19 +10,20 @@
   <a href="https://minecraft.wiki/w/Data_pack"><img src="https://img.shields.io/badge/Minecraft-1.21%2B-purple.svg" alt="Minecraft 1.21+"></a>
 </p>
 
-Aether bridges the gap between modern software development and Minecraft map creation. Stop writing hundreds of repetitive `.mcfunction` files. With Aether, you write clean, object-oriented code with type hints, compile-time math, and a massive native command DSL, and the compiler translates it into perfectly optimized, vanilla-safe Minecraft datapacks.
+Aether combines the raw execution power of vanilla commands with the clean, readable syntax of Rust and Bolt. Stop writing hundreds of repetitive `.mcfunction` files, dealing with messy `execute if` chains, or fighting with scoreboard boilerplate. 
+
+With Aether, you write pure logic and raw commands side-by-side. The compiler handles variable allocation, macro generation, and datapack bundling automatically.
 
 ## ✨ Features
 
-* **Python-like Syntax:** Indentation-based blocks, `def` functions, `class` OOP, and optional type hints.
-* **Production-Ready Command DSL:** Clean, typed function wrappers for almost **every command in the game** (`bossbar`, `attribute`, `damage`, `recipe`, `data`, etc.). No more raw string formatting!
-* **Bolt-Style `execute` Blocks:** Scope commands to entities natively without raw `run()` strings.
-* **`Entity` Wrappers:** Treat selectors as native objects. Call methods like `target.tp(0, 100, 0)` directly!
-* **Dict Literals (NBT):** Use `{}` syntax to create NBT compounds. The compiler handles serialization automatically.
-* **`wait()` Coroutines:** Pause function execution for a set number of ticks. The compiler automatically splits functions and handles `/schedule`.
-* **Zero-Cost Abstractions:** `for` loops and `math::` functions are evaluated *at compile time*, outputting raw commands with zero runtime lag.
-* **Professional Diagnostics:** Rust/Clang-style error reporting with source snippets, underlines, and helpful hints. Features error recovery to report multiple errors at once.
-* **Vanilla Interoperability:** Use the `@objective("deathCount")` decorator to seamlessly read/write vanilla scoreboard objectives.
+* **Rust/Bolt Hybrid Syntax:** Clean `fn`, `let mut`, `if`, and `for` blocks. No semicolons required.
+* **Raw Command Native:** Any line starting with `/` is treated as a vanilla command. No string wrapping needed.
+* **Dynamic `{var}` Macros:** Inject Aether variables directly into raw commands. Aether automatically generates the 1.21 macro functions under the hood.
+* **`execute` Blocks:** Stop copy-pasting `execute as @e at @s run...` on every line. Write it once, open a `{ block`, and put all your commands inside!
+* **Seamless JSON Merging:** Drop a `data/` folder into your project to instantly add custom recipes, dimensions, advancements, and loot tables. Aether merges them perfectly into the final datapack.
+* **Zero-Boilerplate:** Automatically generates `pack.mcmeta`, `load.json`, and `tick.json`.
+* **Zero-Cost Abstractions:** `for` loops and math are evaluated *at compile time*, unrolling into flat commands with zero runtime lag.
+* **Professional Diagnostics:** Rust/Clang-style error reporting with source snippets and helpful hints.
 
 ---
 
@@ -61,54 +62,24 @@ aether --help
 1. Create a folder for your project and add a file named `main.ae`.
 2. Write your first Aether program:
 
-```python
-# main.ae
+```rust
+// main.ae
 namespace my_game
 
-class Player:
-    hp: int
-    name: string
+fn main() {
+    let mut hp = 100
+    hp = hp - 20
 
-    def __init__(self, name: str, hp: int):
-        self.name = name
-        self.hp = hp
+    /tellraw @a {"text":"Game Started! HP is {hp}","color":"gold"}
+}
 
-    def take_damage(self, amount: int):
-        self.hp -= amount
-        say("{self.name} took {amount} damage!")
-
-def main():
-    local p1 = Player("Steve", 100)
-    p1.take_damage(20)
-    
-    # Native Command DSL
-    particle("minecraft:flame", at=(0, 10, 0), count=10, speed=0.1, mode="force")
-    
-    # Dict Literals (NBT Compounds)
-    local zombie_gear = {
-        "id": "minecraft:diamond_sword",
-        "Count": 1
+fn tick() {
+    // Stop copy-pasting execute! Just open a block.
+    execute as @e[type=zombie] at @s {
+        /particle minecraft:flame ~ ~1 ~ 0 0 0 0 1
+        /effect give @s minecraft:speed 1 0 true
     }
-    
-    # Native execute blocks
-    execute as "@e[type=zombie]" at "@s":
-        run("data merge entity @s {HurtTime:10}")
-        particle("minecraft:cloud", at=(~, ~1, ~), count=2)
-        
-    # Entity wrapper objects
-    local target = entity("@p")
-    target.say("I am the target!")
-    target.tp(0, 100, 0)
-    
-    # wait() coroutine
-    say("Falling in 3...")
-    wait(20)
-    say("2...")
-    wait(20)
-    say("1...")
-    wait(20)
-    summon("minecraft:tnt", at=(0, 0, 0), nbt={"Fuse": 20})
-    say("Boom!")
+}
 ```
 
 3. Compile it into a datapack:
@@ -117,6 +88,26 @@ aether main.ae -o my_datapack
 ```
 
 4. Move the generated `my_datapack` folder into your Minecraft world's `datapacks/` folder and run `/reload` in-game!
+
+---
+
+## 📂 Custom Recipes, Dimensions & JSON Assets
+
+Aether doesn't force you to learn a new JSON syntax. If you want to add custom recipes, dimensions, or loot tables, just create a `data/` folder in your project directory! 
+
+Aether will automatically merge your vanilla JSON files into the final compiled datapack.
+
+**Project Structure:**
+```text
+my_project/
+├── main.ae                 <-- Your Aether code
+└── data/                   <-- Your vanilla JSON files
+    └── my_game/
+        └── recipe/
+            └── magic_sword.json
+```
+
+When you run `aether my_project/ -o output/`, Aether compiles your `.ae` files AND copies your `data/` folder, creating a perfect, ready-to-play datapack.
 
 ---
 
@@ -143,47 +134,16 @@ aether ./my_project/ -w -o ./my_world/datapacks/my_game
 
 ---
 
-## 🎮 Native Command DSL
-
-Aether provides structured, typed wrappers for almost every Minecraft command. You no longer need to remember exact string formatting or quote escaping.
-
-```python
-def main():
-    # Effects & Damage
-    effect("give", "@p", "minecraft:speed", duration=30, amplifier=2, particles=false)
-    damage("@e[type=zombie]", 50, type="minecraft:fire", by="@p")
-    
-    # World & Environment
-    setblock(at=(0, 0, 0), "minecraft:diamond_block", mode="replace")
-    fill(from=(0,0,0), to=(5,5,5), "minecraft:stone", mode="hollow")
-    time("set", "day")
-    weather("rain", duration=600)
-    
-    # Entities & Stats
-    attribute("@p", "minecraft:generic.max_health", "base", "set", 20)
-    tag("@e[type=cow]", "add", "my_cow")
-    xp("@p", 10, type="levels")
-    
-    # Server & Admin
-    bossbar("add", "my_boss", "Boss Health")
-    gamerule("doDaylightCycle", "false")
-    recipe("give", "@a", "minecraft:diamond_sword")
-```
-
-If a command doesn't have an explicit wrapper, the **Universal Fallback** automatically formats the function call into a raw vanilla command, meaning *every* command in the game is supported.
-
----
-
 ## 🏗️ Architecture
 
-Aether v2.0 behaves like a real, professionally engineered compiler (Direct Compiler model). The Intermediate Representation (IR) is temporary scaffolding. The final output is optimized, native `.mcfunction` files.
+Aether behaves like a real, professionally engineered compiler (Direct Compiler model). The Intermediate Representation (IR) is temporary scaffolding. The final output is optimized, native `.mcfunction` files.
 
 ```ascii
 [ .ae Source File ]
        |
        v
 +------------------+  Injects DiagnosticEngine (Tracks all errors/warnings)
-|     Lexer        |  Tokenizes source, handles Python-style INDENT/DEDENT
+|     Lexer        |  Tokenizes source, recognizes raw commands
 +------------------+
        |
        v
@@ -203,13 +163,13 @@ Aether v2.0 behaves like a real, professionally engineered compiler (Direct Comp
        |
        v
 +------------------+  Constant folding (5+5 -> 10), unrolls `for` loops,
-| AST Optimizer    |  evaluates math:: functions at compile time.
+| AST Optimizer    |  evaluates math at compile time.
 +------------------+
        |
        v
 +------------------+  Translates AST to command strings (IR).
-| Code Generator   |  Maps int/bool -> scoreboards, string/objects -> NBT.
-+------------------+  Generates 1.21 macros for dynamic commands.
+| Code Generator   |  Maps let mut -> scoreboards, generates 1.21 macros.
++------------------+  Formats raw execute blocks.
        |
        v
 +------------------+  Dead Code Elimination (DCE). Prunes unused branch
@@ -218,30 +178,17 @@ Aether v2.0 behaves like a real, professionally engineered compiler (Direct Comp
        |
        v
 +------------------+
-| Datapack Builder |  Writes pack.mcmeta, load/tick JSON tags, .mcfunction
+| Datapack Builder |  Writes pack.mcmeta, load/tick JSONs, merges data/ folder
 +------------------+
-```
-
-### Error Recovery & Diagnostics
-Instead of crashing on the first syntax error, Aether logs diagnostics and attempts to recover. This allows the compiler to report multiple errors at once, saving you time.
-
-```text
-error[E202]: Expected ':' (Got NEWLINE)
- --> main.ae:4:24
-  |
-4 |     if hp > 0
-  |                        ^ Expected ':' (Got NEWLINE)
-  |
-  = hint: Did you forget a ':' at the end of the statement?
 ```
 
 ---
 
 ## 📖 Documentation
 
-For the complete language specification, grammar, and deep-dive tutorials, read the [**Aether Handbook**].
+For the complete language specification, grammar, and deep-dive tutorials, read the [**Aether Handbook**](https://github.com/torbenn211/aether-compiler/blob/main/HANDBOOK.md).
 
-For a detailed breakdown of compiler changes, see the [**Changelog**](.
+For a detailed breakdown of compiler changes, see the [**Changelog**](https://github.com/torbenn211/aether-compiler/blob/main/CHANGELOG.md).
 
 ---
 

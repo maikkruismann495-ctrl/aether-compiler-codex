@@ -207,11 +207,16 @@ class CodeGenerator(Visitor):
             if not v:
                 self.engine.report(ErrorCodes.UNDECLARED_VARIABLE, Severity.ERROR, f"Undeclared variable '{var_name}' in raw command.", node.line, node.col)
                 continue
+            
+            # The storage key is "macro_{var_name}"
+            storage_key = f"macro_{var_name}"
+            
             if v["type"] in ["int", "bool"]:
-                self.cmds.append(f"execute store storage {self.current_ns}:data macro_{var_name} int 1 run scoreboard players get {v['loc']} ae_int")
+                self.cmds.append(f"execute store storage {self.current_ns}:data {storage_key} int 1 run scoreboard players get {v['loc']} ae_int")
             else:
-                self.cmds.append(f"data modify storage {self.current_ns}:data macro_{var_name} set from storage {self.current_ns}:data {v['loc']}")
-            macro_data_str.append(f"macro_{var_name}")
+                self.cmds.append(f"data modify storage {self.current_ns}:data {storage_key} set from storage {self.current_ns}:data {v['loc']}")
+            
+            macro_data_str.append(storage_key)
             
         args_str = ",".join(macro_data_str)
         self.cmds.append(f"function {full_macro_name} with storage {self.current_ns}:data {{{args_str}}}")
@@ -219,8 +224,11 @@ class CodeGenerator(Visitor):
         old_cmds = self.cmds
         self.cmds = []
         macro_cmd = cmd_str
+        
+        # Replace {var} with $(macro_var) to match the storage key!
         for var_name in matches:
-            macro_cmd = macro_cmd.replace('{' + var_name + '}', '$(' + var_name + ')')
+            macro_cmd = macro_cmd.replace('{' + var_name + '}', '$(macro_' + var_name + ')')
+            
         macro_cmd = '$' + macro_cmd[1:] # Replace leading '/' with '$'
         
         self.cmds.append(macro_cmd)
