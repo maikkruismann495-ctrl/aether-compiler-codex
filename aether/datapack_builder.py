@@ -4,10 +4,6 @@ import os, json, re, shutil
 from typing import Dict, List, Optional
 
 class DatapackBuilder:
-    """
-    Writes the Intermediate Representation (IR) to disk as a valid 
-    Minecraft Java Edition 1.21.11 datapack.
-    """
     PACK_FORMAT = [94, 1]
     PACK_DESC = "Compiled from Aether v2.0"
     NS_RE = re.compile(r"^[a-z0-9_\-\.]+$")
@@ -24,11 +20,12 @@ class DatapackBuilder:
         os.makedirs(data_dir, exist_ok=True)
         
         for f, cmds in self.ir.items():
+            # Handle load.json and tick.json
             if "load.json" in f or "tick.json" in f:
                 tag_dir = os.path.join(data_dir, "minecraft", "tags", "function")
                 os.makedirs(tag_dir, exist_ok=True)
                 
-                # BUG FIX: Only use the filename (e.g. 'load.json'), not the full path
+                # Only use the filename, not the full path!
                 filename = f.split("/")[-1]
                 with open(os.path.join(tag_dir, filename), "w") as file:
                     json.dump({"values": cmds}, file, indent=4)
