@@ -61,7 +61,6 @@ class CodeGenerator(Visitor):
         raise CodegenError("Invalid target", node.line, node.col)
 
     def _get_obj(self, node):
-        """Returns the scoreboard objective for a given AST node."""
         if isinstance(node, Identifier):
             v = self._lookup(node.name)
             return v["objective"] if v else "ae_int"
@@ -281,14 +280,54 @@ class CodeGenerator(Visitor):
             raise CodegenError(f"Command '{name}' requires literal arguments for MVP.", n.line, n.col)
             
         if name == "say":
-            if isinstance(node.args[0], Literal):
-                self.cmds.append(f'tellraw @a {{"text":"{node.args[0].value}"}}')
+            arg = node.args[0]
+            # FULLY DYNAMIC tellraw JSON GENERATION
+            if isinstance(arg, FormatString):
+                json_parts = []
+                for p in arg.parts:
+                    if isinstance(p, str):
+                        if p: json_parts.append('{"text":"' + p.replace('"', '\\"') + '"}')
+                    elif isinstance(p, Literal):
+                        if p.lit_type == "bool": json_parts.append('{"text":"' + ("true" if p.value else "false") + '"}')
+                        else: json_parts.append('{"text":"' + str(p.value) + '"}')
+                    elif isinstance(p, Identifier):
+                        v = self._lookup(p.name)
+                        if not v: raise CodegenError(f"Undeclared variable '{p.name}'", p.line, p.col)
+                        if v["type"] in ["int", "bool"]:
+                            json_parts.append('{"score":{"name":"' + v['loc'] + '","objective":"' + v['objective'] + '"}}')
+                        else:
+                            json_parts.append('{"storage":"' + self.current_ns + ':data","nbt":"' + v['loc'] + '","interpret":true}')
+                tellraw_json = "[" + ",".join(json_parts) + "]"
+                self.cmds.append(f"tellraw @a {tellraw_json}")
+                return None
+                
+            elif isinstance(arg, Literal) and arg.lit_type == "string":
+                # Also handle dynamic variables in plain strings like say("Hello {name}")
+                matches = re.findall(r'\{([a-zA-Z0-9_]+)\}', arg.value)
+                if matches:
+                    parts = re.split(r'\{[a-zA-Z0-9_]+\}', arg.value)
+                    json_parts = []
+                    for i, part in enumerate(parts):
+                        if part: json_parts.append('{"text":"' + part.replace('"', '\\"') + '"}')
+                        if i < len(matches):
+                            var_name = matches[i]
+                            v = self._lookup(var_name)
+                            if not v: raise CodegenError(f"Undeclared variable '{var_name}'", node.line, node.col)
+                            if v["type"] in ["int", "bool"]:
+                                json_parts.append('{"score":{"name":"' + v['loc'] + '","objective":"' + v['objective'] + '"}}')
+                            else:
+                                json_parts.append('{"storage":"' + self.current_ns + ':data","nbt":"' + v['loc'] + '","interpret":true}')
+                    tellraw_json = "[" + ",".join(json_parts) + "]"
+                    self.cmds.append(f"tellraw @a {tellraw_json}")
+                else:
+                    self.cmds.append(f'tellraw @a {{"text":"{arg.value}"}}')
+                return None
             else:
-                t, l = node.args[0].accept(self)
+                t, l = arg.accept(self)
                 if t == "string": self.cmds.append(f'tellraw @a {{"storage":"{self.current_ns}:data","nbt":"{l}","interpret":true}}')
                 else: self.cmds.append(f'tellraw @a {{"score":{{"name":"{l}","objective":"ae_int"}}}}')
-            return None
-            
+                return None
+                
         if name == "give":
             target = lit_to_str(node.args[0])
             item = lit_to_str(node.args[1])

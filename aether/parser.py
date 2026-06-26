@@ -117,11 +117,20 @@ class Parser:
             self._expect(TokenType.RPAREN, "Expected ')'")
             decorator = obj_tok.value
             
+        if self._match(TokenType.LOCAL): return self._var_decl(decorator)
         if self._match(TokenType.IF): return self._if_stmt()
         if self._match(TokenType.FOR): return self._for_stmt()
         if self._match(TokenType.WHILE): return self._while_stmt()
         if self._match(TokenType.RETURN): return self._return_stmt()
-        return self._expr_stmt(decorator)
+        return self._expr_stmt()
+
+    def _var_decl(self, decorator=None) -> VariableDecl:
+        tok = self._previous()
+        name = self._expect(TokenType.IDENT, "Expected variable name").value
+        var_type = self._type_node() if self._match(TokenType.COLON) else None
+        self._expect(TokenType.ASSIGN, "Expected '=' after variable declaration.")
+        val = self._expression()
+        return VariableDecl(tok.line, tok.col, name, var_type, val, decorator)
 
     def _if_stmt(self):
         tok = self._previous()
@@ -171,7 +180,7 @@ class Parser:
         val = None if self._check(TokenType.NEWLINE) else self._expression()
         return ReturnStmt(tok.line, tok.col, val)
 
-    def _expr_stmt(self, decorator=None):
+    def _expr_stmt(self):
         tok = self._peek()
         expr = self._expression()
         if self._match(TokenType.ASSIGN, TokenType.PLUSEQ, TokenType.MINUSEQ, TokenType.STAREQ, TokenType.SLASHEQ, TokenType.PERCENTEQ):
@@ -256,10 +265,6 @@ class Parser:
                 args, kwargs = self._parse_args()
                 self._expect(TokenType.RPAREN, "Expected ')'")
                 return FunctionCall(ident_tok.line, ident_tok.col, None, ident_tok.value, args, kwargs)
-                
-            # This handles VariableDecl without 'local' keyword, but we need 'local' to trigger it.
-            # Wait, Aether uses 'local' keyword. So we must parse it in _statement.
-            # Actually, let's just make VariableDecl explicit in _statement.
             expr = Identifier(ident_tok.line, ident_tok.col, ident_tok.value)
             return self._postfix(expr)
         raise ParseError(f"Unexpected token {tok.type.name}", tok.line, tok.col)
